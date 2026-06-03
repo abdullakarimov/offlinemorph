@@ -1,0 +1,26 @@
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Gradle / Android build artifacts
+.gradle/
+**/build/
+**/captures/
+
+# Android local machine config
+local.properties
+
+# Signing credentials and private keys
+**/keystore.properties
+**/*.jks
+**/*.keystore
+
+# Logs
+*.log
+
+# Kotlin/Java generated caches
+**/.kotlin/
