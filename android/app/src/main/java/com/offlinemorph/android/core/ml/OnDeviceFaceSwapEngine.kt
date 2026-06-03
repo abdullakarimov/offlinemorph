@@ -41,8 +41,10 @@ class OnDeviceFaceSwapEngine(
 
     override suspend fun runSwap(request: SwapRequest, onProgress: (String) -> Unit): SwapRunResult {
         onProgress("Analyzing Faces...")
-        val sourceAnalysis = faceAnalyzer.analyze(request.sourceBitmap)
-        val targetAnalysis = faceAnalyzer.analyze(request.targetBitmap)
+        // Apply the execution-policy image size cap before any inference.
+        val scaledRequest = if (request.maxImageSizePx > 0) request.scaledTo(request.maxImageSizePx) else request
+        val sourceAnalysis = faceAnalyzer.analyze(scaledRequest.sourceBitmap)
+        val targetAnalysis = faceAnalyzer.analyze(scaledRequest.targetBitmap)
         val inswapperFile = File(modelsDirectory, ModelCatalog.INSWAPPER)
 
         if (!inswapperFile.isFile) {
@@ -55,7 +57,7 @@ class OnDeviceFaceSwapEngine(
         if (sourceEmbedding == null || sourceEmbedding.isEmpty()) {
             return SwapRunResult(
                 statusMessage = "Source embedding is missing. ${sourceAnalysis.statusMessage}",
-                outputBitmap = postprocessor.createPreviewBitmap(request.targetBitmap),
+                outputBitmap = postprocessor.createPreviewBitmap(scaledRequest.targetBitmap),
             )
         }
 
@@ -70,15 +72,15 @@ class OnDeviceFaceSwapEngine(
             if (facesToSwap.isEmpty()) {
                 return SwapRunResult(
                     statusMessage = "No faces matched the '${request.faceFilterMode.displayName}' filter.",
-                    outputBitmap = postprocessor.createPreviewBitmap(request.targetBitmap),
+                    outputBitmap = postprocessor.createPreviewBitmap(scaledRequest.targetBitmap),
                 )
             }
-            var currentBitmap = request.targetBitmap
+            var currentBitmap = scaledRequest.targetBitmap
             for ((swapIdx, face) in facesToSwap.withIndex()) {
                 onProgress("Swapping face ${swapIdx + 1} / ${facesToSwap.size}…")
                 val singleResult = runSwap(
                     SwapRequest(
-                        sourceBitmap    = request.sourceBitmap,
+                        sourceBitmap    = scaledRequest.sourceBitmap,
                         targetBitmap    = currentBitmap,
                         enhancerEnabled = request.enhancerEnabled,
                         // Use the face's original rank index from the initial analysis.
@@ -86,6 +88,8 @@ class OnDeviceFaceSwapEngine(
                         // the ranking stays stable across iterations.
                         targetFaceIndex = face.index,
                         faceFilterMode  = FaceFilterMode.SPECIFIC,
+                        // Bitmaps are already scaled; no further cap needed on recursion.
+                        maxImageSizePx  = 0,
                     ),
                     onProgress,
                 )
@@ -119,14 +123,14 @@ class OnDeviceFaceSwapEngine(
         val placementBox = effectiveTargetBox?.let {
             expandToSquareBox(
                 box = it,
-                imageWidth = request.targetBitmap.width,
-                imageHeight = request.targetBitmap.height,
+                imageWidth = scaledRequest.targetBitmap.width,
+                imageHeight = scaledRequest.targetBitmap.height,
                 scale = 1.12f,
             )
         }
-        val targetFaceBitmap = placementBox?.let { cropBitmap(request.targetBitmap, it) }
+        val targetFaceBitmap = placementBox?.let { cropBitmap(scaledRequest.targetBitmap, it) }
             ?: targetAnalysis.primaryFaceBitmap
-            ?: request.targetBitmap
+            ?: scaledRequest.targetBitmap
         val targetRollDegrees = targetAnalysis.rollDegrees
             ?.takeIf { kotlin.math.abs(it) in 3f..40f }
             ?: 0f
@@ -143,7 +147,7 @@ class OnDeviceFaceSwapEngine(
         Log.d("OFFLINEMORPH_SWAP", "kps=$kpLog affine=${affineMatrix != null} emap=${emapVal?.size ?: "null"} targetFaces=${targetAnalysis.detectedFaces} srcFaces=${sourceAnalysis.detectedFaces} detMode=${targetAnalysis.statusMessage.substringAfter("Decoder=").take(20)}")
 
         val preparedTarget = if (affineMatrix != null) {
-            val tensor = FaceAlignmentOps.preprocessTargetTensor(request.targetBitmap, affineMatrix)
+            val tensor = FaceAlignmentOps.preprocessTargetTensor(scaledRequest.targetBitmap, affineMatrix)
             PreparedSwapTarget(
                 resizedBitmap = alignedTargetFaceBitmap,
                 inputTensor = floatBufferToArray(tensor),
@@ -152,7 +156,7 @@ class OnDeviceFaceSwapEngine(
         } else {
             preprocessor.prepareTarget(alignedTargetFaceBitmap)
         }
-        val previewBitmap = postprocessor.createPreviewBitmap(request.targetBitmap)
+        val previewBitmap = postprocessor.createPreviewBitmap(scaledRequest.targetBitmap)
 
         sessionFactory.createSession(inswapperFile).use { swapSession ->
             val targetInputName = if (swapSession.inputNames.contains("target")) {
@@ -256,13 +260,13 @@ class OnDeviceFaceSwapEngine(
                                             if (upscaledPatch != null) {
                                                 FaceAlignmentOps.compositeSwapBack(
                                                     swappedPatch = upscaledPatch,
-                                                    originalTarget = request.targetBitmap,
+                                                    originalTarget = scaledRequest.targetBitmap,
                                                     inverseMatrix = inverseAffineMatrix,
                                                 )
                                             } else {
                                                 FaceAlignmentOps.compositeSwapBack(
                                                     swappedFaceTensor = chwTensor,
-                                                    originalTarget = request.targetBitmap,
+                                                    originalTarget = scaledRequest.targetBitmap,
                                                     inverseMatrix = inverseAffineMatrix,
                                                 )
                                             }
@@ -287,7 +291,7 @@ class OnDeviceFaceSwapEngine(
                                         }
                                         val composed = placementBox?.let {
                                             composeIntoTarget(
-                                                target = request.targetBitmap,
+                                                target = scaledRequest.targetBitmap,
                                                 swappedFace = restoredOrientationFace,
                                                 box = it,
                                             )

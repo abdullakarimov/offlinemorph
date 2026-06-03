@@ -13,11 +13,13 @@ import kotlin.math.sqrt
 class OnnxFaceAnalyzer(
     private val modelsDirectory: File,
     private val sessionFactory: OrtSessionFactory,
+    private val geometryCache: FaceGeometryCache = FaceGeometryCache(),
 ) : FaceAnalyzer {
     private val squareCropPreprocessor = SquareCropPreprocessor()
     private val tensorConverter = BitmapTensorConverter()
 
     override suspend fun analyze(bitmap: Bitmap): FaceAnalysisSummary {
+        geometryCache.get(bitmap)?.let { return it }
         val detectorFile = File(modelsDirectory, ModelCatalog.DETECTOR)
         val recognizerFile = File(modelsDirectory, ModelCatalog.RECOGNIZER)
 
@@ -122,7 +124,7 @@ class OnnxFaceAnalyzer(
                     primaryFaceBox = primaryFaceBox,
                     primaryFaceBitmap = primaryFaceBitmap,
                     allDetectedFaces = allDetectedFaces,
-                )
+                ).also { geometryCache.put(bitmap, it) }
             }
         }
     }

@@ -1,10 +1,27 @@
 package com.offlinemorph.android.feature.models
 
+/**
+ * Classifies a model's install requirement and feature relationship.
+ *
+ * - [CORE]         Required for the base app to function.
+ * - [OPTIONAL]     Enhances an existing feature; safe to skip.
+ * - [FEATURE_PACK] Belongs to a specific optional feature family; downloaded on demand.
+ */
+enum class ModelTier { CORE, OPTIONAL, FEATURE_PACK }
+
 data class ModelSpec(
     val fileName: String,
     val role: String,
     val downloadUrls: List<String> = emptyList(),
+    /** Legacy required flag; prefer [tier] for new code. */
     val required: Boolean = true,
+    val tier: ModelTier = if (required) ModelTier.CORE else ModelTier.OPTIONAL,
+    /** Semantic version of the model artifact (e.g. "1.0.0"). Empty string = unversioned. */
+    val version: String = "",
+    /** Expected SHA-256 hex digest for integrity validation. Null = no checksum enforced. */
+    val sha256: String? = null,
+    /** Feature pack identifier this model belongs to (e.g. "aging", "hair_makeup"). Empty = base pack. */
+    val featurePack: String = "",
 )
 
 object ModelCatalog {

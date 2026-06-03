@@ -21,14 +21,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offlinemorph.android.feature.aging.AgingScreen
 import com.offlinemorph.android.feature.consent.ConsentDialog
 import com.offlinemorph.android.feature.consent.ConsentManager
+import com.offlinemorph.android.feature.flags.FeatureFlags
 import com.offlinemorph.android.feature.swap.AiSetupScreen
 import com.offlinemorph.android.feature.swap.SwapScreen
 import com.offlinemorph.android.feature.swap.SwapViewModel
 import com.offlinemorph.android.feature.videoswap.VideoSwapScreen
 
-private val TABS = listOf("Photo Swap", "Video Swap", "Setup")
+private val TABS = buildList {
+    add("Photo Swap")
+    add("Video Swap")
+    if (FeatureFlags.agingEnabled) add("Aging")
+    add("Setup")
+}
 
 @Composable
 fun OfflineMorphApp() {
@@ -67,10 +74,11 @@ fun OfflineMorphApp() {
                     )
                 }
             }
-            when (selectedTab) {
-                0 -> SwapScreen(viewModel = swapViewModel)
-                1 -> VideoSwapScreen()
-                2 -> AiSetupScreen(viewModel = swapViewModel)
+            when (TABS.getOrNull(selectedTab)) {
+                "Photo Swap" -> SwapScreen(viewModel = swapViewModel)
+                "Video Swap" -> VideoSwapScreen()
+                "Aging"      -> AgingScreen()
+                "Setup"      -> AiSetupScreen(viewModel = swapViewModel)
             }
         }
 
@@ -79,7 +87,7 @@ fun OfflineMorphApp() {
                 onDismissRequest = swapViewModel::dismissMissingAiPackAlert,
                 confirmButton = {
                     TextButton(onClick = {
-                        selectedTab = 2
+                        selectedTab = TABS.indexOf("Setup").coerceAtLeast(0)
                         swapViewModel.dismissMissingAiPackAlert()
                     }) {
                         Text("Open Setup")

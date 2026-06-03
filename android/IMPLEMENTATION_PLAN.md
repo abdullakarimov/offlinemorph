@@ -378,13 +378,69 @@ Follow existing state-driven ViewModel patterns used by current swap flow.
 
 ## Sprint 1 Recommended Backlog
 
-1. Implement expanded model manifest and feature flags.
-2. Build shared geometry/mask cache service.
-3. Deliver aging feature vertical slice (engine + UI + benchmarks).
-4. Add benchmark harness for latency/memory/thermal metrics.
+1. ✅ Implement expanded model manifest and feature flags.
+2. ✅ Build shared geometry/mask cache service.
+3. ✅ Deliver aging feature vertical slice (engine + UI + benchmarks).
+4. ✅ Add benchmark harness for latency/memory/thermal metrics.
 5. Add golden-image regression tests for swap and aging outputs.
 
-## Definition of Done (Per Feature)
+## Implementation Progress
+
+### Iteration 1 — Phase A Foundation (completed 2026-06-03)
+
+Files added / modified:
+
+- `core/ml/EngineContracts.kt` — `EngineError`, `EngineResult<T>`, `EngineProgress`
+- `core/ml/FaceGeometryCache.kt` — thread-safe LRU bitmap→analysis cache
+- `core/metrics/MetricsRecorder.kt` — local-only latency / memory / thermal recorder
+- `feature/device/ExecutionPolicyManager.kt` — live thermal + memory → `QualityProfile`
+- `feature/models/ModelCatalog.kt` — added `ModelTier`, `version`, `sha256`, `featurePack` to `ModelSpec`
+- `feature/flags/FeatureFlags.kt` — build-time gates for Phases B–G (all off by default)
+- `core/ml/aging/AgingEngine.kt` — `AgingRequest / AgingResult / AgingEngine` interface
+- `core/ml/aging/StubAgingEngine.kt` — graceful stub returning `ModelNotFound`
+
+### Iteration 2 — Phase A Wiring (completed 2026-06-03)
+
+Files modified:
+
+- `core/ml/FaceSwapEngine.kt` — added `maxImageSizePx` field to `SwapRequest`
+- `core/ml/OnnxFaceAnalyzer.kt` — injected `FaceGeometryCache`; cache-hit path skips all inference
+- `feature/models/LocalModelManager.kt` — added SHA-256 integrity check; models with a declared `sha256` in `ModelSpec` are validated on every `getStatus()` call
+- `feature/swap/SwapViewModel.kt` — instantiates `ExecutionPolicyManager`; gates `enhancerEnabled` and passes `maxImageSizePx` through `SwapRequest` on every `startSwap()`
+
+### Iteration 3 — Aging UI Vertical Slice + Phase B Swap Uplift (completed 2026-06-03)
+
+Files added:
+
+- `feature/aging/AgingUiState.kt` — sealed `AgingUiState` (Idle / Loading / Success / Error / Unavailable) + `AgingScreenState`
+- `feature/aging/AgingViewModel.kt` — wired to `StubAgingEngine` behind `FeatureFlags.agingEnabled`; handles source pick, age-offset clamp, intensity, and pipeline lifecycle
+- `feature/aging/AgingScreen.kt` — Compose screen with age slider (−50…+50), intensity slider, run / clear controls, result card, unavailable state card
+
+Files modified:
+
+- `OfflineMorphApp.kt` — `TABS` list built dynamically; "Aging" tab injected when `FeatureFlags.agingEnabled`; tab routing switched to name-based `when`; "Open Setup" dialog uses `TABS.indexOf("Setup")` so index is resilient to tab injection
+- `core/ml/FaceSwapEngine.kt` — added `SwapRequest.scaledTo(maxPx)` extension that downscales both bitmaps to the longest-edge cap before inference
+- `core/ml/OnDeviceFaceSwapEngine.kt` — `runSwap` applies `scaledRequest = request.scaledTo(maxImageSizePx)` at entry; all bitmap references in the single-face and multi-face paths use `scaledRequest`; recursive multi-face calls pass `maxImageSizePx = 0` to skip redundant re-scaling
+
+Sprint 1 status:
+
+- ✅ Item 1: expanded model manifest and feature flags
+- ✅ Item 2: geometry/mask cache
+- ✅ Item 3: aging vertical slice (engine contract + stub + UI; on-device model pending)
+- ✅ Item 4: benchmark harness (MetricsRecorder)
+- Item 5: golden-image regression tests (pending)
+
+### Next: Iteration 4 — Phase B Swap Quality Uplift + Phase C Ancestry Contract
+
+Planned work:
+
+1. `core/ml/ancestry/AncestryEngine.kt` — `AncestryRequest / AncestryResult / AncestryEngine` interface and stub
+2. `feature/aging/` — add `AgingConsentCard` inline disclosure for synthetic-face generation (Phase C safety)
+3. Phase B swap quality: `OnDeviceFaceSwapEngine` — add Poisson-blending seam pass after composite to reduce hard edges around the face boundary
+4. Phase B swap quality: `OnnxFaceAnalyzer` — multi-face sorted output reliability improvements (NMS confidence threshold tuning)
+5. Item 5: `androidTest/` — golden-image smoke test for swap output (basic bitmap diff infrastructure)
+
+
 
 A feature is considered done when all conditions are met:
 

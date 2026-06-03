@@ -16,6 +16,7 @@ import com.offlinemorph.android.core.ml.OnnxFaceAnalyzer
 import com.offlinemorph.android.core.ml.OrtSessionFactory
 import com.offlinemorph.android.core.ml.SwapRequest
 import com.offlinemorph.android.feature.device.DeviceCapabilityAssessor
+import com.offlinemorph.android.feature.device.ExecutionPolicyManager
 import com.offlinemorph.android.feature.models.AndroidModelDownloader
 import com.offlinemorph.android.feature.models.AndroidModelInstaller
 import com.offlinemorph.android.feature.models.ModelCatalog
@@ -65,6 +66,7 @@ class SwapViewModel(
 
     private val bitmapLoader: BitmapLoader = AndroidBitmapLoader(application.contentResolver)
     private val capabilityAssessor = DeviceCapabilityAssessor(application)
+    private val policyManager = ExecutionPolicyManager(application)
     private val _uiState = MutableStateFlow(SwapScreenState())
     val uiState: StateFlow<SwapScreenState> = _uiState.asStateFlow()
 
@@ -289,12 +291,16 @@ class SwapViewModel(
                 return@launch
             }
 
+            val policy = policyManager.currentPolicy()
             val swapRequest = SwapRequest(
                 sourceBitmap = sourceBitmapResult.getOrThrow().bitmap,
                 targetBitmap = targetBitmapResult.getOrThrow().bitmap,
-                enhancerEnabled = _uiState.value.isEnhancerEnabled,
+                // Enhancer is only permitted when both the user has enabled it AND the
+                // current execution policy allows it (thermal / memory guardrail).
+                enhancerEnabled = _uiState.value.isEnhancerEnabled && policy.enhancerEnabled,
                 targetFaceIndex = _uiState.value.selectedTargetFaceIndex,
                 faceFilterMode  = _uiState.value.faceFilterMode,
+                maxImageSizePx  = policy.maxImageSizePx,
             )
 
             // Run the full inference pipeline off the main thread.
