@@ -20,9 +20,9 @@ import kotlinx.coroutines.withContext
 
 class AgingViewModel(
     application: Application,
-    private val agingEngine: AgingEngine = StubAgingEngine(),
 ) : AndroidViewModel(application) {
 
+    private val agingEngine: AgingEngine = StubAgingEngine()
     private val bitmapLoader = AndroidBitmapLoader(application.contentResolver)
 
     private val _uiState = MutableStateFlow(
@@ -83,7 +83,11 @@ class AgingViewModel(
                     isWorking = false,
                     agingState = when (engineResult) {
                         is EngineResult.Success -> AgingUiState.Success(engineResult.value.outputBitmap)
-                        is EngineResult.Failure -> AgingUiState.Error(engineResult.statusMessage)
+                        is EngineResult.Failure -> when (engineResult.error) {
+                            is com.offlinemorph.android.core.ml.EngineError.ModelNotFound ->
+                                AgingUiState.ModelNotReady
+                            else -> AgingUiState.Error(engineResult.statusMessage)
+                        }
                     },
                 )
             }

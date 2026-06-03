@@ -17,8 +17,12 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import org.opencv.android.Utils
 import org.opencv.core.Mat
+import org.opencv.core.Point
+import org.opencv.core.Rect
+import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
+import org.opencv.photo.Photo
 
 object FaceAlignmentOps {
     const val ALIGNED_SIZE = 128
@@ -250,11 +254,17 @@ object FaceAlignmentOps {
         val out = originalTarget.copy(Bitmap.Config.ARGB_8888, true)
         Canvas(out).drawBitmap(warpedFace, 0f, 0f, null)
 
+        // Poisson-blend pass: replace the alpha-composited seam with seamlessClone for
+        // photorealistic colour and gradient continuity at the face boundary.
+        val blended = runCatching {
+            poissonSeamBlend(src = warpedFace, dst = out, mask = warpedFace)
+        }.getOrNull()
+
         swappedPatch.recycle()
         maskPatch.recycle()
         warpedFace.recycle()
 
-        return out
+        return blended ?: out
     }
 
     // ── Matte helpers ─────────────────────────────────────────────────────────
@@ -431,6 +441,67 @@ object FaceAlignmentOps {
         Utils.matToBitmap(dstMat, result)
         dstMat.release()
         return result
+    }
+
+    /**
+     * Applies OpenCV seamlessClone (NORMAL_CLONE) to smooth the seam between [src] and [dst].
+     *
+     * [src] is the warped swapped-face bitmap (ARGB, alpha used to derive the blend mask).
+     * [dst] is the current composited output to refine.
+     *
+     * Poisson blending preserves the face's gradient field while matching the target's
+     * colour and luminance at the boundary, eliminating the halo effect visible with
+     * simple alpha compositing.
+     *
+     * Returns a new bitmap on success; returns null on any OpenCV error so the caller
+     * can fall back to the plain alpha-blended result.
+     */
+    private fun poissonSeamBlend(src: Bitmap, dst: Bitmap, mask: Bitmap): Bitmap? {
+        val srcMat = Mat()
+        val dstMat = Mat()
+        val maskMat = Mat()
+        val resultMat = Mat()
+        return try {
+            Utils.bitmapToMat(src, srcMat)
+            Utils.bitmapToMat(dst, dstMat)
+            Utils.bitmapToMat(mask, maskMat)
+
+            // Build an 8-bit grayscale matte from the mask alpha channel.
+            val channels = java.util.ArrayList<Mat>()
+            org.opencv.core.Core.split(maskMat, channels)
+            val alphaCh = channels[3]
+            val grayMask = Mat()
+            // Threshold: any pixel with alpha > 10 contributes to the blend region.
+            Imgproc.threshold(alphaCh, grayMask, 10.0, 255.0, Imgproc.THRESH_BINARY)
+            alphaCh.release()
+            channels.forEach { it.release() }
+
+            // seamlessClone requires BGR (3-channel) sources.
+            val srcBgr = Mat()
+            val dstBgr = Mat()
+            Imgproc.cvtColor(srcMat, srcBgr, Imgproc.COLOR_RGBA2BGR)
+            Imgproc.cvtColor(dstMat, dstBgr, Imgproc.COLOR_RGBA2BGR)
+
+            // Centre point of the non-zero mask region used as the clone anchor.
+            val moments = Imgproc.moments(grayMask)
+            val cx = if (moments.m00 > 0) (moments.m10 / moments.m00) else (dst.width / 2.0)
+            val cy = if (moments.m00 > 0) (moments.m01 / moments.m00) else (dst.height / 2.0)
+            val centre = Point(cx, cy)
+
+            val blendedBgr = Mat()
+            Photo.seamlessClone(srcBgr, dstBgr, grayMask, centre, blendedBgr, Photo.NORMAL_CLONE)
+
+            val result = Bitmap.createBitmap(dst.width, dst.height, Bitmap.Config.ARGB_8888)
+            Imgproc.cvtColor(blendedBgr, resultMat, Imgproc.COLOR_BGR2RGBA)
+            Utils.matToBitmap(resultMat, result)
+
+            srcBgr.release(); dstBgr.release(); blendedBgr.release(); grayMask.release()
+            result
+        } catch (_: Exception) {
+            null
+        } finally {
+            srcMat.release(); dstMat.release(); maskMat.release(); resultMat.release()
+        }
     }
 
     private fun centroid(points: List<PointF>): PointF {

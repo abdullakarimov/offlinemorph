@@ -430,15 +430,111 @@ Sprint 1 status:
 - ✅ Item 4: benchmark harness (MetricsRecorder)
 - Item 5: golden-image regression tests (pending)
 
-### Next: Iteration 4 — Phase B Swap Quality Uplift + Phase C Ancestry Contract
+### Iteration 4 — Aging Tab Live + Phase C Ancestry + Phase B Poisson Seam (completed 2026-06-03)
+
+Files added:
+
+- `core/ml/ancestry/AncestryEngine.kt` — `AncestryRequest / AncestryResult / AncestryEngine` interface
+- `core/ml/ancestry/StubAncestryEngine.kt` — graceful stub returning `ModelNotFound`
+
+Files modified:
+
+- `feature/flags/FeatureFlags.kt` — `agingEnabled = true`; Aging tab is now visible in the running app
+- `feature/aging/AgingScreen.kt` — added inline synthetic-generation disclosure card (on-device notice + no-upload guarantee) shown above controls; uses `MaterialTheme.colorScheme.secondaryContainer` for distinction; added `HorizontalDivider` separator
+- `core/ml/FaceAlignmentOps.kt` — added `org.opencv.photo.Photo` import; added `poissonSeamBlend()` helper using `Photo.seamlessClone(NORMAL_CLONE)` with alpha-derived matte and moment-centred anchor; called from `compositeSwapBack()` as a post-pass that replaces the alpha seam with Poisson-blended colour/gradient continuity; falls back to plain alpha composite on any OpenCV error
+
+Phase B swap quality status: Poisson seam blending is active for all affine-composite swap paths.
+
+### Iteration 4b — Aging Tab Crash Fix (completed 2026-06-03)
+
+Root cause: `AndroidViewModelFactory` uses reflection to find an `(Application)` constructor on `AndroidViewModel` subclasses. Kotlin default-parameter constructors generate a synthetic constructor, not the standard `(Application, ...)` overload, so the factory throws `NoSuchMethodException`. Fixed by removing `agingEngine` from the `AgingViewModel` constructor and instantiating it as a private property instead.
+
+Files modified:
+
+- `feature/aging/AgingViewModel.kt` — removed `agingEngine: AgingEngine = StubAgingEngine()` from constructor; added `private val agingEngine: AgingEngine = StubAgingEngine()` as class body property
+
+### Iteration 5 — Hair & Makeup + Beautify Contracts + Stub Screens + Golden-Image Test Infra (completed 2026-06-03)
+
+Files added:
+
+- `core/ml/hairmakeup/HairMakeupEngine.kt` — `HairMakeupRequest / HairMakeupResult / HairMakeupEngine` interface (Phase D)
+- `core/ml/hairmakeup/StubHairMakeupEngine.kt` — graceful stub returning `ModelNotFound`
+- `core/ml/beautify/BeautifyEngine.kt` — `BeautifyRequest / BeautifyResult / BeautifyEngine` interface (Phase E)
+- `core/ml/beautify/StubBeautifyEngine.kt` — graceful stub returning `ModelNotFound`
+- `feature/hairmakeup/HairMakeupScreen.kt` — "Coming Soon" screen with on-device disclosure card
+- `feature/beautify/BeautifyScreen.kt` — "Coming Soon" screen with on-device disclosure card
+- `androidTest/java/com/offlinemorph/android/SwapOutputSmokeTest.kt` — golden-image test infra: 3 smoke tests covering package name, stub engine result contract, and synthetic bitmap validity
+
+Files modified:
+
+- `feature/flags/FeatureFlags.kt` — `hairMakeupEnabled = true`, `beautifyEnabled = true` (two new tabs visible immediately)
+- `OfflineMorphApp.kt` — added `HairMakeupScreen` and `BeautifyScreen` imports; TABS buildList now adds "Hair & Makeup" and "Beautify" behind their flags; routing `when` block handles both new tab names
+- `app/build.gradle.kts` — added `androidTestImplementation` for `androidx.test.ext:junit:1.2.1`, `androidx.test:runner:1.6.1`, `androidx.test:core:1.6.1`
+
+App now shows 6 tabs: Photo Swap · Video Swap · Aging · Hair & Makeup · Beautify · Setup.
+
+### Iteration 6 — Setup Download Overhaul (completed 2026-06-03)
+
+Goal: make the Setup tab download exactly the right models with live per-file progress bars.
+
+Files added:
+- none
+
+Files modified:
+
+- `feature/models/AndroidModelDownloader.kt` — full rewrite:
+  - New `FileDownloadProgress(fileName, fraction, fileIndex, totalFiles)` data class for byte-level granularity
+  - `downloadMissingRequiredModels` now iterates **only** `ModelCatalog.requiredModels` (bug fix: old code iterated all models)
+  - New `downloadAllModels` method covering `ModelCatalog.allModels` (required + optional)
+  - Private `download()` shared implementation; `downloadFile()` emits byte-level progress via `connection.contentLengthLong` with an 8 KB buffer; fraction = `bytesRead/contentLength`, or `-1f` if server omits `Content-Length`; already-present files emit fraction = 1f and are skipped
+
+- `feature/swap/SwapUiState.kt` — added `ModelItemState` sealed interface (Idle / Installed / Downloading(fraction) / Done / Failed(reason)), `ModelDownloadItem(spec, state)` data class, and `downloadItems: List<ModelDownloadItem>` field to `SwapScreenState`
+
+- `feature/swap/SwapViewModel.kt` — major update:
+  - `refreshModelStatus()` now builds `downloadItems` from the union of installed + missing models and updates `_uiState` (respects `isWorking` flag to avoid race during active download)
+  - Old `downloadModels()` replaced by private `runDownload(requiredOnly)` helper; calls `downloadMissingRequiredModels` or `downloadAllModels` with both `onProgress` (string) and `onFileProgress` (byte-level) callbacks
+  - New public `downloadModels()` calls `runDownload(requiredOnly=true)`
+  - New `downloadAllModels()` calls `runDownload(requiredOnly=false)`
+  - Private `updateItemProgress(fileName, fraction)` maps fraction values to `ModelItemState`: `<0 → Downloading(-1f)` (indeterminate), `0..1 → Downloading(fraction)`, `≥1 → Done`
+
+- `feature/swap/AiSetupScreen.kt` — full redesign:
+  - Replaces two text-only status cards with a `ModelDownloadList` card showing every model as a `ModelRow`
+  - Each `ModelRow` shows status icon (CheckCircle / CloudDownload / ErrorOutline / RadioButtonUnchecked), file name, role label, and a right-aligned percentage or state text
+  - `LinearProgressIndicator` appears below the row while `ModelItemState.Downloading`; indeterminate when `fraction < 0`
+  - "Download Required Models" is now the primary `Button` (full width, CTA)
+  - "Download All (incl. Optional)" is an `OutlinedButton`
+  - "Import AI Files" and "Assess Device" retained as `OutlinedButton`s in a `FlowRow`
+  - Removed the old "Download AI Files" and "Refresh AI Pack" buttons; kept "Refresh" as a concise `OutlinedButton`
+  - `material-icons-extended` dependency added to `app/build.gradle.kts` for `ErrorOutline` and `RadioButtonUnchecked`
+
+### Next: Iteration 7 — Aging hidden, Beautify (OpenCV) + Hair & Makeup (BiSeNet) implemented
+
+**Completed:**
+
+1. `feature/flags/FeatureFlags.kt` — `agingEnabled = false` (Aging tab hidden; no publicly available ONNX aging model found)
+2. `feature/models/ModelCatalog.kt` — added `FACE_PARSING = "face_parsing.onnx"`, `featurePackModels` list with face_parsing entry (`https://huggingface.co/Jasnk/face-parsing-bisenet-onnx/resolve/main/face_parsing.onnx`), updated `allModels`
+3. `core/ml/beautify/OnDeviceBeautifyEngine.kt` — implements `BeautifyEngine` using OpenCV bilateral filter; no ONNX model required; `skinSmoothing` maps to bilateral sigma; blended with `Core.addWeighted`
+4. `core/ml/hairmakeup/OnDeviceHairMakeupEngine.kt` — implements `HairMakeupEngine` using BiSeNet face-parsing ONNX; returns `EngineError.ModelNotFound` when `face_parsing.onnx` absent; argmax segmentation; per-class colour overlay for hair (class 17), lips (12+13), eyeshadow (2+3+4+5)
+5. `feature/beautify/BeautifyUiState.kt` + `BeautifyViewModel.kt` — full state machine, plain `(Application)` constructor, `OnDeviceBeautifyEngine` as class-body property
+6. `feature/hairmakeup/HairMakeupUiState.kt` + `HairMakeupViewModel.kt` — full state machine, `ModelNotReady` state wired from `EngineError.ModelNotFound`
+7. `feature/beautify/BeautifyScreen.kt` — full rewrite: portrait picker, skin-smoothing/eye-enlarge/face-slim/teeth-whiten sliders, result card
+8. `feature/hairmakeup/HairMakeupScreen.kt` — full rewrite: portrait picker, 11 hair colour chips, 8 lip colour chips, intensity slider, `ModelNotReady` card pointing user to Setup download
+9. `OfflineMorphApp.kt` — added `HairMakeupViewModel` + `BeautifyViewModel` creation; both screens receive `viewModel` param
+
+**Model availability policy (established):** Features without publicly available ONNX models are hidden via `FeatureFlags`; only features with a downloadable public model URL are enabled.
+
+### Next: Iteration 8 — Ancestry UI Vertical Slice + Relight/Background Engine Contracts
 
 Planned work:
 
-1. `core/ml/ancestry/AncestryEngine.kt` — `AncestryRequest / AncestryResult / AncestryEngine` interface and stub
-2. `feature/aging/` — add `AgingConsentCard` inline disclosure for synthetic-face generation (Phase C safety)
-3. Phase B swap quality: `OnDeviceFaceSwapEngine` — add Poisson-blending seam pass after composite to reduce hard edges around the face boundary
-4. Phase B swap quality: `OnnxFaceAnalyzer` — multi-face sorted output reliability improvements (NMS confidence threshold tuning)
-5. Item 5: `androidTest/` — golden-image smoke test for swap output (basic bitmap diff infrastructure)
+1. `feature/ancestry/AncestryUiState.kt` — state sealed types (Idle/Loading/Success/Error/Unavailable)
+2. `feature/ancestry/AncestryViewModel.kt` — AndroidViewModel wiring `StubAncestryEngine`; same constructor-body pattern used for `AgingViewModel`
+3. `feature/ancestry/AncestryScreen.kt` — two-portrait picker, blend ratio slider (0..1), Run/Clear, pipeline card
+4. `feature/flags/FeatureFlags.kt` — `ancestryEnabled = true`
+5. Wire "Ancestry" tab into `OfflineMorphApp`
+6. `core/ml/relight/RelightEngine.kt` + stub (Phase F)
+7. `core/ml/backgroundswap/BackgroundSwapEngine.kt` + stub (Phase G)
+
 
 
 

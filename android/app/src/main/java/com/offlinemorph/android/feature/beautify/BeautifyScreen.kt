@@ -1,4 +1,4 @@
-package com.offlinemorph.android.feature.aging
+package com.offlinemorph.android.feature.beautify
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -20,7 +20,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -38,10 +37,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlin.math.roundToInt
 
 @Composable
-fun AgingScreen(viewModel: AgingViewModel = viewModel()) {
+fun BeautifyScreen(viewModel: BeautifyViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val sourcePicker = rememberLauncherForActivityResult(
+    val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> viewModel.onSourceSelected(uri) }
 
@@ -52,123 +51,89 @@ fun AgingScreen(viewModel: AgingViewModel = viewModel()) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("AI Aging / De-Aging", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Beautify", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-        when (uiState.agingState) {
-            is AgingUiState.Unavailable -> {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Aging feature is coming in a future update.",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                return@Column
+        if (uiState.beautifyState is BeautifyUiState.Unavailable) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "Beautify is coming in a future update.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
-            is AgingUiState.ModelNotReady -> {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "Aging Model Not Downloaded",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            "The on-device aging model has not been downloaded yet. Open the Setup tab and tap \"Download Required Models\" to get all AI model files.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
-                return@Column
-            }
-            else -> Unit
+            return@Column
         }
 
-        // Synthetic-generation disclosure
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         ) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "On-Device AI Generation",
+                    "On-Device Processing",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 Text(
-                    "All transformations run entirely on your device. No images are uploaded or shared. Output is AI-generated synthetic media.",
+                    "All enhancements run entirely on your device. No images are uploaded.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }
 
-        HorizontalDivider()
         OutlinedButton(
-            onClick = { sourcePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onClick = {
+                photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(if (uiState.sourceUri != null) "Change Portrait" else "Pick Portrait")
         }
 
-        // Age offset slider
-        Column {
-            val offsetLabel = when {
-                uiState.ageOffsetYears > 0 -> "+${uiState.ageOffsetYears} years (aging)"
-                uiState.ageOffsetYears < 0 -> "${uiState.ageOffsetYears} years (de-aging)"
-                else -> "No age change"
-            }
-            Text("Age offset: $offsetLabel", style = MaterialTheme.typography.labelMedium)
-            Slider(
-                value = uiState.ageOffsetYears.toFloat(),
-                onValueChange = { viewModel.onAgeOffsetChanged(it.roundToInt()) },
-                valueRange = -50f..50f,
-                steps = 99,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("−50", style = MaterialTheme.typography.labelSmall)
-                Text("0", style = MaterialTheme.typography.labelSmall)
-                Text("+50", style = MaterialTheme.typography.labelSmall)
-            }
-        }
+        // ── Skin Smoothing (implemented) ──────────────────────────────────────
+        ControlSlider(
+            label = "Skin Smoothing: ${(uiState.skinSmoothing * 100).roundToInt()}%",
+            value = uiState.skinSmoothing,
+            onValueChange = viewModel::onSkinSmoothingChanged,
+        )
 
-        // Intensity slider
-        Column {
-            Text(
-                "Intensity: ${(uiState.intensity * 100).roundToInt()}%",
-                style = MaterialTheme.typography.labelMedium,
-            )
-            Slider(
-                value = uiState.intensity,
-                onValueChange = viewModel::onIntensityChanged,
-                valueRange = 0f..1f,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        // ── Controls pending model support (shown, not yet applied) ───────────
+        ControlSlider(
+            label = "Eye Enlarge: ${(uiState.eyeEnlarge * 100).roundToInt()}%  (coming soon)",
+            value = uiState.eyeEnlarge,
+            onValueChange = viewModel::onEyeEnlargeChanged,
+            enabled = false,
+        )
+        ControlSlider(
+            label = "Face Slim: ${(uiState.faceSlim * 100).roundToInt()}%  (coming soon)",
+            value = uiState.faceSlim,
+            onValueChange = viewModel::onFaceSlimChanged,
+            enabled = false,
+        )
+        ControlSlider(
+            label = "Teeth Whitening: ${(uiState.teethWhiten * 100).roundToInt()}%  (coming soon)",
+            value = uiState.teethWhiten,
+            onValueChange = viewModel::onTeethWhitenChanged,
+            enabled = false,
+        )
 
-        // Run / clear
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = viewModel::runAging,
+                onClick = viewModel::runBeautify,
                 enabled = uiState.sourceUri != null && !uiState.isWorking,
                 modifier = Modifier.weight(1f),
-            ) { Text("Run Aging") }
-
+            ) { Text("Apply") }
             OutlinedButton(
                 onClick = viewModel::clearResult,
-                enabled = uiState.agingState !is AgingUiState.Idle,
+                enabled = uiState.beautifyState !is BeautifyUiState.Idle,
                 modifier = Modifier.weight(1f),
             ) { Text("Clear") }
         }
 
-        // Pipeline state card
-        when (val state = uiState.agingState) {
-            is AgingUiState.Loading -> {
+        when (val state = uiState.beautifyState) {
+            is BeautifyUiState.Loading -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -180,17 +145,17 @@ fun AgingScreen(viewModel: AgingViewModel = viewModel()) {
                     }
                 }
             }
-            is AgingUiState.Error -> {
+            is BeautifyUiState.Error -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = state.message,
+                        state.message,
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             }
-            is AgingUiState.Success -> {
+            is BeautifyUiState.Success -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Result", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
@@ -206,3 +171,28 @@ fun AgingScreen(viewModel: AgingViewModel = viewModel()) {
         }
     }
 }
+
+@Composable
+private fun ControlSlider(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    enabled: Boolean = true,
+) {
+    Column {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = 0f..1f,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+        )
+    }
+}
+

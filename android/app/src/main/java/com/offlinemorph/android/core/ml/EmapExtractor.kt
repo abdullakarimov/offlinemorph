@@ -28,7 +28,10 @@ object EmapExtractor {
     fun getEmap(modelFile: File): FloatArray {
         val sidecar = File(modelFile.parentFile, SIDECAR_NAME)
         if (sidecar.isFile && sidecar.length() > 0) {
-            return readBinaryFloats(sidecar)
+            val cached = readBinaryFloats(sidecar)
+            // Reject a sidecar written with wrong byte-order (NaN values) and re-extract.
+            if (cached.none { it.isNaN() }) return cached
+            sidecar.delete()
         }
         val emap = extractFromModel(modelFile)
         runCatching { writeBinaryFloats(sidecar, emap) }
@@ -155,8 +158,13 @@ object EmapExtractor {
     /**
      * Extracts float32 data from a TensorProto slice.
      * Prefers `raw_data` (field 9) over `float_data` (field 4) when both are present.
+     *
+     * Note: Android's MappedByteBuffer.duplicate() does NOT propagate the byte order of
+     * the parent buffer — the duplicate always starts as BIG_ENDIAN.  We therefore force
+     * LITTLE_ENDIAN explicitly here before any multi-byte read.
      */
     private fun decodeTensorFloats(buf: ByteBuffer): FloatArray {
+        buf.order(ByteOrder.LITTLE_ENDIAN)
         var rawStart = -1
         var rawLength = 0
         var floatData: FloatArray? = null

@@ -161,6 +161,16 @@ class SwapViewModel(
                     append(". Optional: ${status.optionalInstalledModels.joinToString { it.fileName }} ✓")
                 }
             }
+
+            // Build per-model download rows for the Setup screen.
+            val installedNames = (status.installedModels + status.optionalInstalledModels).map { it.fileName }.toSet()
+            val items = ModelCatalog.allModels.map { spec ->
+                ModelDownloadItem(
+                    spec = spec,
+                    state = if (spec.fileName in installedNames) ModelItemState.Installed else ModelItemState.Idle,
+                )
+            }
+
             _uiState.update { current ->
                 current.copy(
                     modelStatusMessage = message,
@@ -174,6 +184,7 @@ class SwapViewModel(
                     },
                     isEnhancerModelAvailable = enhancerAvailable,
                     isGenderModelAvailable = genderModelAvailable,
+                    downloadItems = if (current.isWorking) current.downloadItems else items,
                 )
             }
         }
@@ -221,18 +232,27 @@ class SwapViewModel(
     }
 
     fun downloadModels() {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isWorking = true,
-                    modelInstallMessage = "Starting AI file download...",
-                )
-            }
+        runDownload(requiredOnly = true)
+    }
 
-            val result = modelDownloader.downloadMissingRequiredModels { progress ->
-                _uiState.update { state ->
-                    state.copy(modelInstallMessage = progress)
-                }
+    fun downloadAllModels() {
+        runDownload(requiredOnly = false)
+    }
+
+    private fun runDownload(requiredOnly: Boolean) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isWorking = true, modelInstallMessage = "Starting download…") }
+
+            val result = if (requiredOnly) {
+                modelDownloader.downloadMissingRequiredModels(
+                    onProgress = { msg -> _uiState.update { it.copy(modelInstallMessage = msg) } },
+                    onFileProgress = { p -> updateItemProgress(p.fileName, p.fraction) },
+                )
+            } else {
+                modelDownloader.downloadAllModels(
+                    onProgress = { msg -> _uiState.update { it.copy(modelInstallMessage = msg) } },
+                    onFileProgress = { p -> updateItemProgress(p.fileName, p.fraction) },
+                )
             }
 
             val summary = buildString {
@@ -246,13 +266,24 @@ class SwapViewModel(
                 }
             }
 
-            _uiState.update {
-                it.copy(
-                    isWorking = false,
-                    modelInstallMessage = summary,
+            _uiState.update { it.copy(isWorking = false, modelInstallMessage = summary) }
+            refreshModelStatus()
+        }
+    }
+
+    private fun updateItemProgress(fileName: String, fraction: Float) {
+        _uiState.update { state ->
+            val items = state.downloadItems.map { item ->
+                if (item.spec.fileName != fileName) item
+                else item.copy(
+                    state = when {
+                        fraction >= 1f -> ModelItemState.Done
+                        fraction < 0f  -> ModelItemState.Downloading(-1f)
+                        else           -> ModelItemState.Downloading(fraction)
+                    },
                 )
             }
-            refreshModelStatus()
+            state.copy(downloadItems = items)
         }
     }
 

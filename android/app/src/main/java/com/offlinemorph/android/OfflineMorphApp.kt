@@ -22,9 +22,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offlinemorph.android.feature.aging.AgingScreen
+import com.offlinemorph.android.feature.beautify.BeautifyScreen
+import com.offlinemorph.android.feature.beautify.BeautifyViewModel
 import com.offlinemorph.android.feature.consent.ConsentDialog
 import com.offlinemorph.android.feature.consent.ConsentManager
 import com.offlinemorph.android.feature.flags.FeatureFlags
+import com.offlinemorph.android.feature.hairmakeup.HairMakeupScreen
+import com.offlinemorph.android.feature.hairmakeup.HairMakeupViewModel
 import com.offlinemorph.android.feature.swap.AiSetupScreen
 import com.offlinemorph.android.feature.swap.SwapScreen
 import com.offlinemorph.android.feature.swap.SwapViewModel
@@ -34,6 +38,8 @@ private val TABS = buildList {
     add("Photo Swap")
     add("Video Swap")
     if (FeatureFlags.agingEnabled) add("Aging")
+    if (FeatureFlags.hairMakeupEnabled) add("Hair & Makeup")
+    if (FeatureFlags.beautifyEnabled) add("Beautify")
     add("Setup")
 }
 
@@ -59,6 +65,8 @@ fun OfflineMorphApp() {
 
     Surface(modifier = Modifier.fillMaxSize()) {
         val swapViewModel: SwapViewModel = viewModel()
+        val hairMakeupViewModel: HairMakeupViewModel = viewModel()
+        val beautifyViewModel: BeautifyViewModel = viewModel()
         val swapUiState by swapViewModel.uiState.collectAsStateWithLifecycle()
         var selectedTab by remember { mutableIntStateOf(0) }
         Column(modifier = Modifier
@@ -75,10 +83,12 @@ fun OfflineMorphApp() {
                 }
             }
             when (TABS.getOrNull(selectedTab)) {
-                "Photo Swap" -> SwapScreen(viewModel = swapViewModel)
-                "Video Swap" -> VideoSwapScreen()
-                "Aging"      -> AgingScreen()
-                "Setup"      -> AiSetupScreen(viewModel = swapViewModel)
+                "Photo Swap"   -> SwapScreen(viewModel = swapViewModel)
+                "Video Swap"   -> VideoSwapScreen()
+                "Aging"        -> AgingScreen()
+                "Hair & Makeup" -> HairMakeupScreen(viewModel = hairMakeupViewModel)
+                "Beautify"     -> BeautifyScreen(viewModel = beautifyViewModel)
+                "Setup"        -> AiSetupScreen(viewModel = swapViewModel)
             }
         }
 

@@ -23,14 +23,20 @@ class LocalModelManager(
         val optionalMissing = ModelCatalog.optionalModels.filterNot { spec ->
             installedAndValid(spec)
         }
+        val featurePackInstalled = ModelCatalog.featurePackModels.filter { spec ->
+            installedAndValid(spec)
+        }
+        val featurePackMissing = ModelCatalog.featurePackModels.filterNot { spec ->
+            installedAndValid(spec)
+        }
 
         return ModelStatus(
             ready = missingModels.isEmpty(),
             installedModels = installedModels,
             missingModels = missingModels,
             modelDirectoryPath = modelsDirectory.absolutePath,
-            optionalInstalledModels = optionalInstalled,
-            optionalMissingModels = optionalMissing,
+            optionalInstalledModels = optionalInstalled + featurePackInstalled,
+            optionalMissingModels = optionalMissing + featurePackMissing,
         )
     }
 

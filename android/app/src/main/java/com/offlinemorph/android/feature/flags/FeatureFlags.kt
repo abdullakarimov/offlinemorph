@@ -11,17 +11,17 @@ object FeatureFlags {
     /** Phase B — Face swap quality uplift (boundary blending, multi-face, quality profiles). */
     val faceSwapUpliftEnabled: Boolean = false
 
-    /** Phase C — AI Aging and De-aging synthesis. */
+    /** Phase C — AI Aging and De-aging synthesis. No public ONNX model available yet; hidden until one ships. */
     val agingEnabled: Boolean = false
 
     /** Phase C — Ancestry blend synthesis. */
     val ancestryEnabled: Boolean = false
 
     /** Phase D — Hair and Makeup studio. */
-    val hairMakeupEnabled: Boolean = false
+    val hairMakeupEnabled: Boolean = true
 
     /** Phase E — Beautifying and virtual plastic surgery controls. */
-    val beautifyEnabled: Boolean = false
+    val beautifyEnabled: Boolean = true
 
     /** Phase F — Cinematic 3D relighting. */
     val relightEnabled: Boolean = false

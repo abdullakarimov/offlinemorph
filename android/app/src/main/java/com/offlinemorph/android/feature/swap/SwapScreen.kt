@@ -37,8 +37,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import com.offlinemorph.android.ui.components.ZoomableImage
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
@@ -56,7 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun SwapScreen(viewModel: SwapViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showZoomDialog by remember { mutableStateOf(false) }
+
 
     // Derived values from the swap pipeline sealed state.
     val swapState = uiState.swapState
@@ -240,27 +240,16 @@ fun SwapScreen(viewModel: SwapViewModel = viewModel()) {
                     ) {
                         Text(text = "Preview", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            text = "Tap image to zoom",
+                            text = "Pinch to zoom · drag to pan",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Image(
-                            bitmap = outputBitmap.asImageBitmap(),
-                            contentDescription = "Current swap preview",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showZoomDialog = true },
-                        )
+                        ZoomableImage(bitmap = outputBitmap)
                     }
                 }
             }
 
-            if (showZoomDialog && outputBitmap != null) {
-                ZoomPreviewDialog(
-                    bitmap = outputBitmap,
-                    onDismiss = { showZoomDialog = false },
-                )
-            }
+
         }
 
         val workingMessage = when {
@@ -283,54 +272,7 @@ fun SwapScreen(viewModel: SwapViewModel = viewModel()) {
     }
 }
 
-@Composable
-private fun ZoomPreviewDialog(
-    bitmap: android.graphics.Bitmap,
-    onDismiss: () -> Unit,
-) {
-    var zoom by remember { mutableFloatStateOf(1f) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
-        },
-        title = {
-            Text("Zoom Preview")
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("Zoom: ${"%.1f".format(zoom)}x", fontWeight = FontWeight.Medium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { zoom = (zoom - 0.25f).coerceAtLeast(1f) }) {
-                            Text("-")
-                        }
-                        TextButton(onClick = { zoom = (zoom + 0.25f).coerceAtMost(4f) }) {
-                            Text("+")
-                        }
-                    }
-                }
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Zoomed output preview",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .size(320.dp)
-                        .graphicsLayer {
-                            scaleX = zoom
-                            scaleY = zoom
-                        },
-                )
-            }
-        },
-    )
-}
 
 @Composable
 private fun ImageSlotCard(

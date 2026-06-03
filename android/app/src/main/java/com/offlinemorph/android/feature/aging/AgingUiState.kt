@@ -11,6 +11,8 @@ sealed interface AgingUiState {
     data class Error(val message: String) : AgingUiState
     /** Feature is disabled by the build-time flag. */
     data object Unavailable : AgingUiState
+    /** Feature is enabled but the required model file is not yet on-device. */
+    data object ModelNotReady : AgingUiState
 }
 
 /** Full-screen state for the aging screen. */

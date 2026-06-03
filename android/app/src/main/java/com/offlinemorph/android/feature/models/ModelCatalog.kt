@@ -30,8 +30,9 @@ object ModelCatalog {
     const val LANDMARKS_3D = "1k3d68.onnx"
     const val RECOGNIZER   = "w600k_r50.onnx"
     const val INSWAPPER    = "inswapper_128.onnx"
-    const val GFPGAN       = "GFPGANv1.4.onnx"
-    const val GENDERAGE    = "genderage.onnx"
+    const val GFPGAN        = "GFPGANv1.4.onnx"
+    const val GENDERAGE     = "genderage.onnx"
+    const val FACE_PARSING  = "face_parsing.onnx"
 
     val requiredModels: List<ModelSpec> = listOf(
         ModelSpec(
@@ -90,7 +91,20 @@ object ModelCatalog {
         ),
     )
 
-    val allModels: List<ModelSpec> get() = requiredModels + optionalModels
+    val featurePackModels: List<ModelSpec> = listOf(
+        ModelSpec(
+            fileName = FACE_PARSING,
+            role = "face region segmentation (hair & makeup)",
+            required = false,
+            tier = ModelTier.FEATURE_PACK,
+            featurePack = "hair_makeup",
+            downloadUrls = listOf(
+                "https://huggingface.co/bluefoxcreation/Face_parsing_onnx/resolve/main/faceparser_sim.onnx",
+            ),
+        ),
+    )
+
+    val allModels: List<ModelSpec> get() = requiredModels + optionalModels + featurePackModels
 
     fun expectedFileNames(): List<String> = requiredModels.map { it.fileName }
 }

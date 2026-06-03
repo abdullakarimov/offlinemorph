@@ -2,6 +2,7 @@ package com.offlinemorph.android.feature.swap
 
 import android.graphics.Bitmap
 import android.net.Uri
+import com.offlinemorph.android.feature.models.ModelSpec
 
 /**
  * Swap pipeline execution state. Drives the swap progress card in the UI.
@@ -17,6 +18,30 @@ sealed interface SwapUiState {
     data class Success(val resultBitmap: Bitmap) : SwapUiState
     data class Error(val exception: Throwable) : SwapUiState
 }
+
+/**
+ * Live state of a single model file in the Setup download list.
+ */
+sealed interface ModelItemState {
+    /** Not yet attempted this session. */
+    data object Idle : ModelItemState
+    /** File already present on disk and valid. */
+    data object Installed : ModelItemState
+    /** Currently downloading; [fraction] is 0..1, or -1 when size is unknown. */
+    data class Downloading(val fraction: Float) : ModelItemState
+    /** Download finished this session. */
+    data object Done : ModelItemState
+    /** Download failed; [reason] carries a short error description. */
+    data class Failed(val reason: String) : ModelItemState
+}
+
+/**
+ * One row in the Setup model list — pairs a [ModelSpec] with its current [state].
+ */
+data class ModelDownloadItem(
+    val spec: ModelSpec,
+    val state: ModelItemState = ModelItemState.Idle,
+)
 
 /**
  * Full-screen state for the swap screen.
@@ -53,7 +78,10 @@ data class SwapScreenState(
     val faceFilterMode: com.offlinemorph.android.core.ml.FaceFilterMode = com.offlinemorph.android.core.ml.FaceFilterMode.SPECIFIC,
     /** True when genderage.onnx is installed — enables Male/Female filter modes. */
     val isGenderModelAvailable: Boolean = false,
+    /** Per-model download rows shown in the Setup screen. Populated by [refreshModelStatus]. */
+    val downloadItems: List<ModelDownloadItem> = emptyList(),
 ) {
     val canSwap: Boolean
         get() = sourceUri != null && targetUri != null && !isWorking && !isDetectingFaces && swapState !is SwapUiState.Loading
 }
+
