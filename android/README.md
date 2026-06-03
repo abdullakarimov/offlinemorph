@@ -1,87 +1,87 @@
-# OfflineMorph
+# OfflineMorph Android App
 
-OfflineMorph is a privacy-first mobile AI system for portrait transformation that performs all inference directly on-device, delivering zero-internet execution, sub-second visual feedback, and enterprise-grade user data isolation.
+Android-specific implementation details for OfflineMorph.
+
+For product vision, privacy guarantees, and cross-platform roadmap, see the repository root README: ../README.md
+
+## Scope
+
+This module contains the native Android application that runs portrait AI workflows fully on-device.
+
+- Kotlin + Jetpack Compose UI and feature screens
+- ONNX Runtime Android inference sessions
+- OpenCV-based preprocessing and image-space transforms
+- NNAPI-aware execution path with automatic fallback behavior
+- Local image and video pipelines (decode, process, encode)
+- Local model management, install, and discovery flows
+
+## Implemented Android Stack
+
+- Language and UI: Kotlin, Jetpack Compose, Material 3
+- Build Toolchain: Android Gradle Plugin 8.5.2, Kotlin 1.9.24, Java 17
+- Android Targets: minSdk 29, targetSdk 35, compileSdk 35
+- ML Runtime: ONNX Runtime Android 1.18.0
+- Vision and CV: OpenCV 4.10.0
+- Async Runtime: Kotlin Coroutines 1.8.1
+- Lifecycle and State: AndroidX Lifecycle Runtime + ViewModel Compose
+
+## Prerequisites
+
+- Android Studio (latest stable)
+- JDK 17
+- Android SDK 35 and platform tools
+- An Android device or emulator running API 29+
+
+## Build And Run
+
+From this folder:
+
+```bash
+./gradlew :app:assembleDebug
+./gradlew :app:installDebug
+```
+
+Build a release artifact:
+
+```bash
+./gradlew :app:assembleRelease
+```
+
+## Release Signing
+
+Release builds require signing configuration.
+
+1. Copy keystore.properties.example to keystore.properties
+2. Fill storeFile, storePassword, keyAlias, and keyPassword
+3. Run the release build task
+
+If release credentials are missing, the build intentionally fails fast.
+
+## Model And Data Handling
+
+- Inference runs locally on device with no cloud dependency.
+- Model files are expected through local install/import flows.
+- User images and video frames remain on-device during processing.
+
+## Module Layout
 
 ```text
-Design Principle: Your face data never leaves your phone.
-Execution Model: Local NPU/GPU/CPU acceleration with no cloud fallback.
-User Promise: Instant rendering + full biometric privacy sovereignty.
+app/src/main/java/com/offlinemorph/android/
+  core/
+    image/      # bitmap loading and low-level image ops
+    ml/         # ONNX sessions, tensor conversion, alignment, swap/enhance engines
+    video/      # decoder, encoder, frame indexing, video swap orchestration
+  feature/
+    consent/    # consent UX and policy gating
+    device/     # capability assessment for local execution paths
+    models/     # model catalog, download/install/import management
+    swap/       # portrait swap screens and view models
+    videoswap/  # video swap screens and view models
+  ui/theme/     # Compose theme system
 ```
 
-## Core Architecture
+## Development Direction
 
-OfflineMorph is engineered as a multi-runtime, hardware-aware inference stack that prioritizes deterministic local execution and thermal stability under sustained compute loads.
-
-- [x] Inference runtime layer supports ONNX Runtime Mobile for compact cross-platform model execution.
-- [x] iOS acceleration path targets Apple CoreML with Metal-backed execution providers.
-- [x] Android acceleration path targets NNAPI and TFLite delegates for vendor NPU compatibility.
-- [x] Model variants are quantized and calibrated to INT8 and FP16 to optimize memory bandwidth, latency, and battery impact.
-- [x] Pipeline orchestration uses operator fusion, tensor reuse, and tiled processing to maintain frame-level responsiveness.
-
-```mermaid
-flowchart LR
-		A[Input Portrait / Video Frame] --> B[Preprocessing and Face Alignment]
-		B --> C[Local Model Router]
-		C --> D[ONNX Runtime Mobile]
-		C --> E[CoreML]
-		C --> F[NNAPI / TFLite]
-		D --> G[Postprocess and Compositing]
-		E --> G
-		F --> G
-		G --> H[Rendered Output - Device Local]
-```
-
-## Feature Roadmap
-
-- [x] Face Swap
-	High-fidelity identity transfer with expression-aware blending and skin-tone continuity correction.
-- [x] AI Aging / De-aging / Ancestry
-	Controlled age progression-regression transformations with morphology-preserving facial priors.
-- [x] Studio Hair and Makeup Try-on
-	Semantic region targeting for hair geometry, texture transfer, lipstick, contouring, and eye-makeup simulation.
-- [x] Virtual Plastic Surgery and Beautifying
-	Parametric facial reshaping for non-destructive aesthetic previewing (nose, jawline, cheekbone, symmetry refinement).
-- [x] Cinematic 3D Relighting
-	Physically plausible portrait relighting with synthetic key-fill-rim generation and shadow-consistent enhancement.
-- [x] Micro-Precision Background Matting
-	High-resolution alpha extraction for hair edges, transparent accessories, and portrait-grade foreground isolation.
-
-## Targeted Hardware Requirements
-
-OfflineMorph is tuned for flagship-class SoCs and thermal envelopes where sustained AI workloads can remain stable without cloud offload.
-
-| Requirement Dimension | Baseline Target |
-| --- | --- |
-| Android Reference Device | Samsung Galaxy S25 Ultra (Snapdragon 8 Elite) |
-| iOS Reference Device | iPhone 17 Pro Max (A19 Pro) |
-| Minimum Memory Envelope | 12 GB RAM for multi-model residency and low paging pressure |
-| Compute Acceleration | Native NPU-first scheduling with GPU-assisted image compositing |
-| Throughput Goal | Real-time or near-real-time portrait rendering under sustained sessions |
-| Thermal Constraint | Operation designed around vapor-chamber cooling boundaries and throttling avoidance |
-
-```text
-Performance Intent:
-- Keep active model set resident in memory to minimize cold-start penalties.
-- Prioritize NPU execution for dense neural operators.
-- Defer non-critical enhancements when thermal headroom drops.
-```
-
-## Tech Stack Suggestions
-
-- [x] Application Layer: Flutter for rapid cross-platform UI delivery, with selective native modules for latency-critical paths.
-- [x] Native Integration: Kotlin/Swift modules for camera, codec, memory, and hardware scheduling controls.
-- [x] Inference Runtime: ONNX Runtime Mobile with execution-provider routing per device capability profile.
-- [x] Vision Toolkit: MediaPipe for robust landmarking, tracking stabilization, and geometry normalization.
-- [x] Rendering Pipeline: Custom GPU shaders (Metal / Vulkan / OpenGL ES) for compositing, relighting, and post effects.
-
-## Privacy Policy Directive
-
-OfflineMorph enforces strict local-only processing: no user photos, videos, embeddings, facial landmarks, or derived biometric artifacts are transmitted to remote servers under any circumstance. The product architecture explicitly prevents external data exfiltration and disallows user-content reuse for remote AI training, analytics profiling, or third-party model enrichment.
-
-```text
-Policy Enforcement Summary
-- No cloud inference
-- No automatic upload of media or metadata
-- No server-side identity graph construction
-- No remote model-training ingestion from user-generated content
-```
+- Continue native Android development as the primary mobile implementation track.
+- Expand current ONNX + OpenCV on-device pipeline and quality controls.
+- Improve thermal-aware scheduling and sustained performance on flagship NPUs.
