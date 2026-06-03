@@ -245,24 +245,35 @@ object FaceAlignmentOps {
         val matteScaleMatrix = Matrix().apply {
             setScale(width.toFloat() / maskW, height.toFloat() / maskH)
         }
-        Canvas(warpedFace).drawBitmap(
+
+        // Apply alpha matte to a copy of warpedFace for the fallback alpha-composited blend.
+        val warpedFaceBlended = warpedFace.copy(Bitmap.Config.ARGB_8888, true)
+        Canvas(warpedFaceBlended).drawBitmap(
             matteLow, matteScaleMatrix,
             Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) },
         )
+
+        // Create fullMask for Poisson blending by scaling matteLow to target size.
+        val fullMask = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Canvas(fullMask).drawBitmap(matteLow, matteScaleMatrix, null)
+
         matteLow.recycle()
 
         val out = originalTarget.copy(Bitmap.Config.ARGB_8888, true)
-        Canvas(out).drawBitmap(warpedFace, 0f, 0f, null)
+        Canvas(out).drawBitmap(warpedFaceBlended, 0f, 0f, null)
 
         // Poisson-blend pass: replace the alpha-composited seam with seamlessClone for
         // photorealistic colour and gradient continuity at the face boundary.
+        // We pass the fully-opaque warpedFace as src, the original target as dst, and fullMask as mask.
         val blended = runCatching {
-            poissonSeamBlend(src = warpedFace, dst = out, mask = warpedFace)
+            poissonSeamBlend(src = warpedFace, dst = originalTarget, mask = fullMask)
         }.getOrNull()
 
         swappedPatch.recycle()
         maskPatch.recycle()
         warpedFace.recycle()
+        warpedFaceBlended.recycle()
+        fullMask.recycle()
 
         return blended ?: out
     }
@@ -482,10 +493,14 @@ object FaceAlignmentOps {
             Imgproc.cvtColor(srcMat, srcBgr, Imgproc.COLOR_RGBA2BGR)
             Imgproc.cvtColor(dstMat, dstBgr, Imgproc.COLOR_RGBA2BGR)
 
-            // Centre point of the non-zero mask region used as the clone anchor.
-            val moments = Imgproc.moments(grayMask)
-            val cx = if (moments.m00 > 0) (moments.m10 / moments.m00) else (dst.width / 2.0)
-            val cy = if (moments.m00 > 0) (moments.m01 / moments.m00) else (dst.height / 2.0)
+            // Centre point of the non-zero mask region's bounding box used as the clone anchor
+            // to ensure 1-to-1 coordinate alignment without any shifting.
+            val rect = Imgproc.boundingRect(grayMask)
+            if (rect.width <= 0 || rect.height <= 0) {
+                return null
+            }
+            val cx = rect.x + rect.width / 2.0
+            val cy = rect.y + rect.height / 2.0
             val centre = Point(cx, cy)
 
             val blendedBgr = Mat()
