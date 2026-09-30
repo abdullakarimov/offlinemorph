@@ -9,8 +9,8 @@ class BitmapTensorConverter {
      * Formula per channel: (pixelValue / scaleDivisor - mean[c]) / std[c]
      *
      * @param swapChannels When true the R and B planes are swapped in the output,
-     *   producing BGR-CHW rather than RGB-CHW.  Required by SCRFD detectors which
-     *   were trained on OpenCV BGR input.
+     *   producing BGR-CHW rather than RGB-CHW. Note that the InsightFace models (SCRFD,
+     *   ArcFace, inswapper) all expect RGB despite being run from OpenCV BGR code.
      */
     fun toNormalizedChwFloatArray(
         bitmap: Bitmap,

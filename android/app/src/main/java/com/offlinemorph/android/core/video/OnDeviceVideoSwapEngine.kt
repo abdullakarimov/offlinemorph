@@ -55,6 +55,7 @@ class OnDeviceVideoSwapEngine(
         encoder.start()
 
         var framesProcessed = 0
+        val startTime = System.currentTimeMillis()
         try {
             decoder.decodeFrames(
                 uri = request.targetVideoUri,
@@ -66,6 +67,8 @@ class OnDeviceVideoSwapEngine(
                     enhancerEnabled = request.enhancerEnabled,
                     targetFaceIndex = request.targetFaceIndex,
                     faceFilterMode  = request.faceFilterMode,
+                    // Poisson cloning costs tens of ms per frame; the feathered matte suffices for video.
+                    seamlessBlend   = false,
                 )
                 val result = faceSwapEngine.runSwap(swapRequest)
                 val swappedBitmap = result.outputBitmap ?: frame.bitmap
@@ -78,7 +81,27 @@ class OnDeviceVideoSwapEngine(
 
                 framesProcessed++
                 val total = if (estimatedFrames > 0) estimatedFrames else framesProcessed
-                onProgress(framesProcessed, total, "Frame $framesProcessed / ~$total")
+
+                val remainingTimeMs = if (framesProcessed > 0 && total > framesProcessed) {
+                    val elapsedMs = System.currentTimeMillis() - startTime
+                    val avgTimePerFrameMs = elapsedMs.toDouble() / framesProcessed
+                    (avgTimePerFrameMs * (total - framesProcessed)).toLong()
+                } else 0L
+
+                val remainingTimeStr = if (remainingTimeMs > 0) {
+                    val totalSecs = remainingTimeMs / 1000
+                    val mins = totalSecs / 60
+                    val secs = totalSecs % 60
+                    if (mins > 0) {
+                        " - ~${mins}m ${secs}s remaining"
+                    } else {
+                        " - ~${secs}s remaining"
+                    }
+                } else {
+                    ""
+                }
+
+                onProgress(framesProcessed, total, "Processing$remainingTimeStr")
             }
         } finally {
             encoder.finish()

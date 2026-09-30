@@ -56,7 +56,7 @@ class ExecutionPolicyManager(private val context: Context) {
         }
 
         return when (DeviceCapabilityAssessor(context).assess().tier) {
-            "High"   -> ExecutionPolicy(QualityProfile.BALANCED, 1024, enhancerEnabled = true,  reason = "High-tier device")
+            "High"   -> ExecutionPolicy(QualityProfile.STUDIO, 2048, enhancerEnabled = true,  reason = "High-tier device")
             "Medium" -> ExecutionPolicy(QualityProfile.BALANCED, 768,  enhancerEnabled = false, reason = "Medium-tier device")
             else     -> ExecutionPolicy(QualityProfile.FAST,     512,  enhancerEnabled = false, reason = "Entry-tier device")
         }

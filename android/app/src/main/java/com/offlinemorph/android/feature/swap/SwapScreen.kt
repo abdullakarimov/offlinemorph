@@ -199,6 +199,26 @@ fun SwapScreen(viewModel: SwapViewModel = viewModel()) {
                 )
             }
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                val detailInteractive = !isSwapping && !uiState.isWorking
+                Checkbox(
+                    checked = uiState.isHighDetailEnabled,
+                    onCheckedChange = viewModel::toggleHighDetail,
+                    enabled = detailInteractive,
+                )
+                Text(
+                    text = "High Detail Swap (~4× slower, sharper close-ups)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = if (detailInteractive) 1f else 0.38f,
+                    ),
+                )
+            }
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

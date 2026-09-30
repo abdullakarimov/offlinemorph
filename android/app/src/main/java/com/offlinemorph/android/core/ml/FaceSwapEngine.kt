@@ -21,6 +21,13 @@ data class SwapRequest(
      * 0 = no cap (use full resolution).
      */
     val maxImageSizePx: Int = 0,
+    /**
+     * InSwapper "pixel boost" factor. With N > 1 the face is aligned at 128·N px and swapped as
+     * N² interleaved 128 px sub-crops, yielding an N× sharper face at N² the inference cost.
+     */
+    val pixelBoost: Int = 1,
+    /** Poisson-blend the swapped face into the target so lighting and skin tone match. */
+    val seamlessBlend: Boolean = true,
 ) {
     /**
      * Returns a copy of this request with both bitmaps downscaled so that their longest

@@ -17,6 +17,7 @@ import com.offlinemorph.android.core.ml.OrtSessionFactory
 import com.offlinemorph.android.core.ml.SwapRequest
 import com.offlinemorph.android.feature.device.DeviceCapabilityAssessor
 import com.offlinemorph.android.feature.device.ExecutionPolicyManager
+import com.offlinemorph.android.feature.device.QualityProfile
 import com.offlinemorph.android.feature.models.AndroidModelDownloader
 import com.offlinemorph.android.feature.models.AndroidModelInstaller
 import com.offlinemorph.android.feature.models.ModelCatalog
@@ -113,7 +114,8 @@ class SwapViewModel(
     private fun detectTargetFaces(uri: Uri) {
         viewModelScope.launch {
             _uiState.update { it.copy(isDetectingFaces = true) }
-            val bitmapResult = runCatching { bitmapLoader.load(uri) }
+            val maxSize = policyManager.currentPolicy().maxImageSizePx
+            val bitmapResult = withContext(Dispatchers.IO) { runCatching { bitmapLoader.load(uri, maxSize) } }
             if (bitmapResult.isFailure) {
                 _uiState.update { it.copy(isDetectingFaces = false) }
                 return@launch
@@ -135,6 +137,10 @@ class SwapViewModel(
 
     fun toggleEnhancer(enabled: Boolean) {
         _uiState.update { it.copy(isEnhancerEnabled = enabled) }
+    }
+
+    fun toggleHighDetail(enabled: Boolean) {
+        _uiState.update { it.copy(isHighDetailEnabled = enabled) }
     }
 
     fun setFaceFilterMode(mode: com.offlinemorph.android.core.ml.FaceFilterMode) {
@@ -311,9 +317,12 @@ class SwapViewModel(
                 )
             }
 
-            // Decode bitmaps on the main thread (ContentResolver I/O), then hand off to Default.
-            val sourceBitmapResult = runCatching { bitmapLoader.load(sourceUri) }
-            val targetBitmapResult = runCatching { bitmapLoader.load(targetUri) }
+            // Decode off the main thread, downsampling to the policy cap during decode.
+            val policy = policyManager.currentPolicy()
+            val (sourceBitmapResult, targetBitmapResult) = withContext(Dispatchers.IO) {
+                runCatching { bitmapLoader.load(sourceUri, policy.maxImageSizePx) } to
+                    runCatching { bitmapLoader.load(targetUri, policy.maxImageSizePx) }
+            }
 
             if (sourceBitmapResult.isFailure || targetBitmapResult.isFailure) {
                 val cause = (sourceBitmapResult.exceptionOrNull() ?: targetBitmapResult.exceptionOrNull())
@@ -322,7 +331,6 @@ class SwapViewModel(
                 return@launch
             }
 
-            val policy = policyManager.currentPolicy()
             val swapRequest = SwapRequest(
                 sourceBitmap = sourceBitmapResult.getOrThrow().bitmap,
                 targetBitmap = targetBitmapResult.getOrThrow().bitmap,
@@ -332,6 +340,8 @@ class SwapViewModel(
                 targetFaceIndex = _uiState.value.selectedTargetFaceIndex,
                 faceFilterMode  = _uiState.value.faceFilterMode,
                 maxImageSizePx  = policy.maxImageSizePx,
+                // Pixel boost quadruples inswapper cost, so it is gated by the thermal/memory policy.
+                pixelBoost      = if (_uiState.value.isHighDetailEnabled && policy.qualityProfile == QualityProfile.STUDIO) 2 else 1,
             )
 
             // Run the full inference pipeline off the main thread.

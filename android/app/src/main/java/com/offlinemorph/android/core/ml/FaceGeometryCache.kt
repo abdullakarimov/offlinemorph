@@ -1,43 +1,47 @@
 package com.offlinemorph.android.core.ml
 
 import android.graphics.Bitmap
+import java.lang.ref.WeakReference
 
 /**
- * Thread-safe LRU cache for [FaceAnalysisSummary] results.
+ * Thread-safe LRU cache for [FaceAnalysisSummary] results, keyed by [Bitmap] instance.
  *
- * Keyed by [Bitmap] identity (not pixel content) so that the same bitmap instance reused
- * across multiple feature engines in a single session avoids redundant face-detection and
- * landmark passes.
+ * Entries hold the bitmap weakly and are verified by reference and generation id on lookup,
+ * so a recycled video frame whose identity hash is reused by a new frame can never return
+ * another frame's faces.
  *
  * @param maxEntries maximum number of entries kept before the oldest is evicted.
  */
 class FaceGeometryCache(private val maxEntries: Int = 8) {
 
-    private val store = object : LinkedHashMap<Int, FaceAnalysisSummary>(
+    private class Entry(
+        val bitmap: WeakReference<Bitmap>,
+        val generationId: Int,
+        val summary: FaceAnalysisSummary,
+        val hasEmbedding: Boolean,
+        val hasGender: Boolean,
+    )
+
+    private val store = object : LinkedHashMap<Int, Entry>(
         maxEntries + 1, 0.75f, /* accessOrder= */ true,
     ) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<Int, FaceAnalysisSummary>,
-        ) = size > maxEntries
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Entry>) = size > maxEntries
     }
 
     private val lock = Any()
 
-    /** Returns the cached analysis for [bitmap], or null if not present. */
-    fun get(bitmap: Bitmap): FaceAnalysisSummary? = synchronized(lock) {
-        store[System.identityHashCode(bitmap)]
+    /** Returns the cached analysis for [bitmap] if it was computed with at least the requested outputs. */
+    fun get(bitmap: Bitmap, needEmbedding: Boolean, needGender: Boolean): FaceAnalysisSummary? = synchronized(lock) {
+        val entry = store[System.identityHashCode(bitmap)] ?: return null
+        val valid = entry.bitmap.get() === bitmap &&
+            entry.generationId == bitmap.generationId &&
+            (entry.hasEmbedding || !needEmbedding) &&
+            (entry.hasGender || !needGender)
+        if (valid) entry.summary else null
     }
 
-    /** Stores [summary] under [bitmap]'s identity. */
-    fun put(bitmap: Bitmap, summary: FaceAnalysisSummary): Unit = synchronized(lock) {
-        store[System.identityHashCode(bitmap)] = summary
+    fun put(bitmap: Bitmap, summary: FaceAnalysisSummary, hasEmbedding: Boolean, hasGender: Boolean): Unit = synchronized(lock) {
+        store[System.identityHashCode(bitmap)] =
+            Entry(WeakReference(bitmap), bitmap.generationId, summary, hasEmbedding, hasGender)
     }
-
-    /** Removes the cached entry for [bitmap] if present. */
-    fun invalidate(bitmap: Bitmap): Unit = synchronized(lock) {
-        store.remove(System.identityHashCode(bitmap))
-    }
-
-    /** Evicts all cached entries. */
-    fun clear(): Unit = synchronized(lock) { store.clear() }
 }

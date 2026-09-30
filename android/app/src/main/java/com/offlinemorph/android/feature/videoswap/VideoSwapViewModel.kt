@@ -20,12 +20,14 @@ import com.offlinemorph.android.core.video.VideoSwapEngine
 import com.offlinemorph.android.core.video.VideoSwapRequest
 import com.offlinemorph.android.feature.models.ModelCatalog
 import com.offlinemorph.android.feature.models.ModelPaths
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class VideoSwapViewModel(
@@ -61,7 +63,7 @@ class VideoSwapViewModel(
 
     fun onSourceSelected(uri: Uri) {
         viewModelScope.launch {
-            val bitmap = bitmapLoader.load(uri).bitmap
+            val bitmap = withContext(Dispatchers.IO) { bitmapLoader.load(uri, MAX_SOURCE_SIZE_PX).bitmap }
             _uiState.update { it.copy(sourceUri = uri, sourceBitmap = bitmap, swapState = VideoSwapUiState.Idle) }
         }
     }
@@ -155,5 +157,10 @@ class VideoSwapViewModel(
                 }
             }
         }
+    }
+
+    private companion object {
+        /** The source face only feeds a 112 px recogniser crop; no need to decode it at full size. */
+        const val MAX_SOURCE_SIZE_PX = 2048
     }
 }

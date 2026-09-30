@@ -10,6 +10,8 @@ import kotlin.math.min
 import kotlin.math.PI
 import kotlin.math.sqrt
 
+private const val RECOGNIZER_SIZE = 112
+
 class OnnxFaceAnalyzer(
     private val modelsDirectory: File,
     private val sessionFactory: OrtSessionFactory,
@@ -18,115 +20,125 @@ class OnnxFaceAnalyzer(
     private val squareCropPreprocessor = SquareCropPreprocessor()
     private val tensorConverter = BitmapTensorConverter()
 
-    override suspend fun analyze(bitmap: Bitmap): FaceAnalysisSummary {
-        geometryCache.get(bitmap)?.let { return it }
+    override suspend fun analyze(
+        bitmap: Bitmap,
+        includeEmbedding: Boolean,
+        includeGender: Boolean,
+    ): FaceAnalysisSummary {
+        geometryCache.get(bitmap, includeEmbedding, includeGender)?.let { return it }
         val detectorFile = File(modelsDirectory, ModelCatalog.DETECTOR)
         val recognizerFile = File(modelsDirectory, ModelCatalog.RECOGNIZER)
 
-        if (!detectorFile.isFile || !recognizerFile.isFile) {
+        if (!detectorFile.isFile || (includeEmbedding && !recognizerFile.isFile)) {
             return FaceAnalysisSummary(
                 detectedFaces = 0,
                 statusMessage = "Face analysis models are not fully installed.",
             )
         }
 
-        sessionFactory.createSession(detectorFile).use { detectorSession ->
-            sessionFactory.createSession(recognizerFile).use { recognizerSession ->
-                val detectorInput = squareCropPreprocessor.prepare(bitmap, 640)
-                // SCRFD detector expects BGR CHW normalized as (pixel − 127.5) / 128.0.
-                val detectorTensor = tensorConverter.toNormalizedChwFloatArray(
-                    bitmap = detectorInput.bitmap,
-                    mean = floatArrayOf(127.5f / 128f, 127.5f / 128f, 127.5f / 128f),
-                    scaleDivisor = 128.0f,
-                    swapChannels = true,
-                )
+        val detectorInput = squareCropPreprocessor.prepare(bitmap, 640)
+        // SCRFD expects RGB CHW normalised as (pixel − 127.5) / 128 (InsightFace uses
+        // blobFromImage(..., swapRB=True) on OpenCV's BGR frames, i.e. RGB).
+        val detectorTensor = tensorConverter.toNormalizedChwFloatArray(
+            bitmap = detectorInput.bitmap,
+            mean = floatArrayOf(127.5f / 128f, 127.5f / 128f, 127.5f / 128f),
+            scaleDivisor = 128.0f,
+            swapChannels = false,
+        )
+        val detectorProbe = runSessionProbe(
+            session = sessionFactory.session(detectorFile),
+            inputTensor = detectorTensor,
+            inputSize = detectorInput.bitmap.width,
+            label = "detector",
+        )
+        val detectorDecode = decodeDetectorOutputs(
+            detectorOutputs = detectorProbe.outputs,
+            fallbackOutput = detectorProbe.firstOutput,
+            detectorInputSize = detectorInput.bitmap.width,
+            detectorScale = detectorInput.scale,
+            sourceWidth = bitmap.width,
+            sourceHeight = bitmap.height,
+        )
+        val primaryFaceBox = detectorDecode.primaryFaceBox
 
-                val detectorProbe = runSessionProbe(
-                    session = detectorSession,
-                    inputTensor = detectorTensor,
-                    inputSize = detectorInput.bitmap.width,
-                    label = "detector",
-                )
-                val detectorDecode = decodeDetectorOutputs(
-                    detectorOutputs = detectorProbe.outputs,
-                    fallbackOutput = detectorProbe.firstOutput,
-                    detectorInputSize = detectorInput.bitmap.width,
-                    detectorScale = detectorInput.scale,
-                    sourceWidth = bitmap.width,
-                    sourceHeight = bitmap.height,
-                )
-                val primaryFaceBox = detectorDecode.primaryFaceBox
-                val primaryFaceBitmap = primaryFaceBox?.let { cropBitmap(bitmap, it) }
-
-                val recognizerSource = primaryFaceBitmap ?: bitmap
-                val recognizerInput = squareCropPreprocessor.prepare(recognizerSource, 112)
-                // ArcFace / InsightFace w600k_r50 expects RGB CHW normalised as (pixel/255 − 0.5) / 0.5 = pixel/127.5 − 1.
-                val recognizerTensor = tensorConverter.toNormalizedChwFloatArray(
-                    bitmap = recognizerInput.bitmap,
-                    mean = floatArrayOf(0.5f, 0.5f, 0.5f),
-                    std = floatArrayOf(0.5f, 0.5f, 0.5f),
-                    scaleDivisor = 255.0f,
-                    swapChannels = false,
-                )
-                val recognizerProbe = runSessionProbe(
-                    session = recognizerSession,
-                    inputTensor = recognizerTensor,
-                    inputSize = recognizerInput.bitmap.width,
-                    label = "recognizer",
-                )
-                val landmarkProbe = runLandmarkProbe(
-                    sourceFaceBitmap = recognizerSource,
-                    sourceFaceBoxInOriginal = primaryFaceBox,
-                )
-                val estimatedFaceCount = detectorDecode.faceCount
-                val embedding = extractEmbedding(recognizerProbe)
-
-                // Build the per-face list from the detector's sorted NMS survivors.
-                val rawDetectedFaces: List<DetectedFaceResult> = detectorDecode.allFaces
-                    .mapIndexed { idx, (box, kps) ->
-                        val thumb = cropBitmap(bitmap, box)
-                        DetectedFaceResult(
-                            index = idx,
-                            box = box,
-                            fiveKeypoints = kps,
-                            thumbnail = thumb,
-                        )
-                    }
-
-                // Optional gender classification via genderage.onnx.
-                val genderageFile = File(modelsDirectory, ModelCatalog.GENDERAGE)
-                val allDetectedFaces: List<DetectedFaceResult> = if (genderageFile.isFile && rawDetectedFaces.isNotEmpty()) {
-                    sessionFactory.createSession(genderageFile).use { genderSession ->
-                        rawDetectedFaces.map { face ->
-                            val isMale = face.thumbnail?.let { classifyGender(it, genderSession) }
-                            face.copy(isMale = isMale)
-                        }
-                    }
-                } else {
-                    rawDetectedFaces
-                }
-
-                return FaceAnalysisSummary(
-                    detectedFaces = estimatedFaceCount,
-                    statusMessage = "Face-analysis sessions loaded. Detector crop scale=${detectorInput.scale}. Decoder=${detectorDecode.mode}. Primary face=${primaryFaceBox?.let { "(${it.left},${it.top})-(${it.right},${it.bottom}) score=${it.score}" } ?: "not decoded"}. Recognizer crop scale=${recognizerInput.scale}. ${detectorProbe.message} ${recognizerProbe.message} ${landmarkProbe.message}",
-                    embedding = embedding,
-                    embeddingLength = embedding?.size ?: 0,
-                    recognizerOutputName = recognizerProbe.selectedOutput?.name,
-                    landmarkModelUsed = landmarkProbe.modelName,
-                    landmarkOutputName = landmarkProbe.outputName,
-                    landmarkPointCount = landmarkProbe.pointCount,
-                    // Prefer the detector's native 5-point keypoints over the heuristic
-                    // 106-point→5-point derivation; the detector kps are more accurate.
-                    landmarkFivePoints = detectorDecode.detectorFivePoints ?: landmarkProbe.fivePoints,
-                    leftEye = landmarkProbe.leftEye,
-                    rightEye = landmarkProbe.rightEye,
-                    rollDegrees = landmarkProbe.rollDegrees,
-                    primaryFaceBox = primaryFaceBox,
-                    primaryFaceBitmap = primaryFaceBitmap,
-                    allDetectedFaces = allDetectedFaces,
-                ).also { geometryCache.put(bitmap, it) }
-            }
+        // Dense landmarks are only needed when the detector produced no 5-point keypoints.
+        val landmarkProbe = if (detectorDecode.detectorFivePoints == null && primaryFaceBox != null) {
+            cropBitmap(bitmap, primaryFaceBox)?.let { runLandmarkProbe(it, primaryFaceBox) }
+        } else {
+            null
         }
+        val fivePoints = detectorDecode.detectorFivePoints ?: landmarkProbe?.fivePoints
+
+        val recognizerProbe = if (includeEmbedding && primaryFaceBox != null) {
+            runSessionProbe(
+                session = sessionFactory.session(recognizerFile),
+                inputTensor = recognizerInput(bitmap, fivePoints, primaryFaceBox),
+                inputSize = RECOGNIZER_SIZE,
+                label = "recognizer",
+            )
+        } else {
+            null
+        }
+        val embedding = recognizerProbe?.let { extractEmbedding(it) }
+
+        // Build the per-face list from the detector's sorted NMS survivors.
+        val rawDetectedFaces: List<DetectedFaceResult> = detectorDecode.allFaces
+            .mapIndexed { idx, (box, kps) ->
+                DetectedFaceResult(
+                    index = idx,
+                    box = box,
+                    fiveKeypoints = kps,
+                    thumbnail = cropBitmap(bitmap, box),
+                )
+            }
+
+        val genderageFile = File(modelsDirectory, ModelCatalog.GENDERAGE)
+        val allDetectedFaces: List<DetectedFaceResult> =
+            if (includeGender && genderageFile.isFile && rawDetectedFaces.isNotEmpty()) {
+                val genderSession = sessionFactory.session(genderageFile)
+                rawDetectedFaces.map { face -> face.copy(isMale = classifyGender(bitmap, face.box, genderSession)) }
+            } else {
+                rawDetectedFaces
+            }
+
+        return FaceAnalysisSummary(
+            detectedFaces = detectorDecode.faceCount,
+            statusMessage = "Decoder=${detectorDecode.mode}. Primary face=${primaryFaceBox?.let { "(${it.left},${it.top})-(${it.right},${it.bottom}) score=${it.score}" } ?: "not decoded"}. ${detectorProbe.message} ${recognizerProbe?.message.orEmpty()} ${landmarkProbe?.message.orEmpty()}",
+            embedding = embedding,
+            embeddingLength = embedding?.size ?: 0,
+            recognizerOutputName = recognizerProbe?.selectedOutput?.name,
+            landmarkModelUsed = landmarkProbe?.modelName,
+            landmarkOutputName = landmarkProbe?.outputName,
+            landmarkPointCount = landmarkProbe?.pointCount ?: 0,
+            landmarkFivePoints = fivePoints,
+            leftEye = landmarkProbe?.leftEye,
+            rightEye = landmarkProbe?.rightEye,
+            rollDegrees = landmarkProbe?.rollDegrees,
+            primaryFaceBox = primaryFaceBox,
+            allDetectedFaces = allDetectedFaces,
+        ).also { geometryCache.put(bitmap, it, hasEmbedding = includeEmbedding, hasGender = includeGender) }
+    }
+
+    /**
+     * ArcFace input: the face warped onto the canonical 112×112 5-point template (InsightFace
+     * `norm_crop`), RGB normalised as (pixel − 127.5) / 127.5. Identity embeddings from an
+     * unaligned box crop are markedly less discriminative, which shows up directly as weak
+     * resemblance in the swapped result.
+     */
+    private fun recognizerInput(bitmap: Bitmap, fivePoints: FloatArray?, box: FaceBoundingBox): FloatArray {
+        if (fivePoints != null) {
+            val matrix = FaceAlignmentOps.alignmentMatrix(fivePoints, FaceTemplate.ARCFACE_112, RECOGNIZER_SIZE)
+            val crop = FaceAlignmentOps.warpToCrop(bitmap, matrix, RECOGNIZER_SIZE)
+            return FaceAlignmentOps.rgbMatToChw(crop, mean = 127.5f, std = 127.5f).also { crop.release() }
+        }
+        val faceBitmap = cropBitmap(bitmap, box) ?: bitmap
+        return tensorConverter.toNormalizedChwFloatArray(
+            bitmap = squareCropPreprocessor.prepare(faceBitmap, RECOGNIZER_SIZE).bitmap,
+            mean = floatArrayOf(0.5f, 0.5f, 0.5f),
+            std = floatArrayOf(0.5f, 0.5f, 0.5f),
+            scaleDivisor = 255.0f,
+            swapChannels = false,
+        )
     }
 
     private fun runSessionProbe(
@@ -185,7 +197,7 @@ class OnnxFaceAnalyzer(
         )
 
         return runCatching {
-            sessionFactory.createSession(landmarkFile).use { session ->
+            sessionFactory.session(landmarkFile).let { session ->
                 val inputSize = inferSquareInputSize(session).coerceIn(96, 512)
                 val prep = squareCropPreprocessor.prepare(sourceFaceBitmap, inputSize)
                 val tensor = tensorConverter.toNormalizedChwFloatArray(prep.bitmap)
@@ -941,31 +953,30 @@ class OnnxFaceAnalyzer(
     }
 
     /**
-     * Classifies the gender of a face crop using the genderage.onnx model.
+     * Classifies gender with genderage.onnx (InsightFace `Attribute`).
      *
-     * The model expects a 96×96 RGB crop normalised as (pixel/255 − 0.5) / 0.5.
-     * Output[0] = female score, output[1] = male score (argmax of first two).
+     * The face is centred in a 96×96 crop scaled so the box's longer side spans 64 px, and fed
+     * as raw RGB 0–255 — the model normalises internally via its leading `bn_data` layer.
+     * Output[0] = female score, output[1] = male score.
      *
      * Returns true (male), false (female), or null on any failure.
      */
-    private fun classifyGender(faceThumbnail: Bitmap, session: ai.onnxruntime.OrtSession): Boolean? {
+    private fun classifyGender(bitmap: Bitmap, box: FaceBoundingBox, session: OrtSession): Boolean? {
         return runCatching {
-            val scaled = Bitmap.createScaledBitmap(faceThumbnail, 96, 96, true)
-            val tensor = tensorConverter.toNormalizedChwFloatArray(
-                bitmap = scaled,
-                mean = floatArrayOf(0.5f, 0.5f, 0.5f),
-                std = floatArrayOf(0.5f, 0.5f, 0.5f),
-                scaleDivisor = 255.0f,
-                swapChannels = false,
-            )
-            val shape = longArrayOf(1, 3, 96, 96)
+            val scale = 64f / max(box.right - box.left, box.bottom - box.top).coerceAtLeast(1)
+            val cx = (box.left + box.right) * 0.5f
+            val cy = (box.top + box.bottom) * 0.5f
+            val matrix = android.graphics.Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(48f - cx * scale, 48f - cy * scale)
+            }
+            val crop = FaceAlignmentOps.warpToCrop(bitmap, matrix, 96)
+            val tensor = FaceAlignmentOps.rgbMatToChw(crop, mean = 0f, std = 1f).also { crop.release() }
             val inputName = session.inputNames.firstOrNull() ?: return null
-            sessionFactory.createFloatTensor(tensor, shape).use { inputTensor ->
+            sessionFactory.createFloatTensor(tensor, longArrayOf(1, 3, 96, 96)).use { inputTensor ->
                 session.run(mapOf(inputName to inputTensor)).use { result ->
-                    val outputs = OrtValueUtils.extractFloatOutputs(result)
-                    val out = outputs.firstOrNull()?.data ?: return null
+                    val out = OrtValueUtils.extractFloatOutputs(result).firstOrNull()?.data ?: return null
                     if (out.size < 2) return null
-                    // out[0] = female probability, out[1] = male probability
                     out[1] > out[0]
                 }
             }

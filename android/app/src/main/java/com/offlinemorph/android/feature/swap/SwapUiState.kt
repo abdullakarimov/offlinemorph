@@ -64,6 +64,8 @@ data class SwapScreenState(
     val swapState: SwapUiState = SwapUiState.Idle,
     /** When true, the enhancer model runs after the inswapper to sharpen and upscale the swapped face. */
     val isEnhancerEnabled: Boolean = false,
+    /** When true, the swap runs at 2× pixel boost (four inswapper passes) for a sharper face. */
+    val isHighDetailEnabled: Boolean = false,
     /** True when GFPGANv1.4.onnx is present in the models directory. */
     val isEnhancerModelAvailable: Boolean = false,
     /** Supplemental text shown below the result preview (e.g. save path after export). */

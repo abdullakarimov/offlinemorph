@@ -114,23 +114,22 @@ class OnDeviceHairMakeupEngine(
         )
         scaled.recycle()
 
-        sessionFactory.createSession(modelFile).use { session ->
-            val inputName = session.inputNames.first()
-            sessionFactory.createFloatTensor(
-                data = tensor,
-                shape = longArrayOf(1L, 3L, MODEL_SIZE.toLong(), MODEL_SIZE.toLong()),
-            ).use { inputTensor ->
-                session.run(mapOf(inputName to inputTensor)).use { result ->
-                    val outputs = OrtValueUtils.extractFloatOutputs(result)
-                    check(outputs.isNotEmpty()) { "Face parsing model returned no outputs." }
-                    val logits = outputs.first()
-                    return argmaxMap(
-                        data = logits.data,
-                        shape = logits.shape,
-                        dstW = bitmap.width,
-                        dstH = bitmap.height,
-                    )
-                }
+        val session = sessionFactory.session(modelFile)
+        val inputName = session.inputNames.first()
+        sessionFactory.createFloatTensor(
+            data = tensor,
+            shape = longArrayOf(1L, 3L, MODEL_SIZE.toLong(), MODEL_SIZE.toLong()),
+        ).use { inputTensor ->
+            session.run(mapOf(inputName to inputTensor)).use { result ->
+                val outputs = OrtValueUtils.extractFloatOutputs(result)
+                check(outputs.isNotEmpty()) { "Face parsing model returned no outputs." }
+                val logits = outputs.first()
+                return argmaxMap(
+                    data = logits.data,
+                    shape = logits.shape,
+                    dstW = bitmap.width,
+                    dstH = bitmap.height,
+                )
             }
         }
     }

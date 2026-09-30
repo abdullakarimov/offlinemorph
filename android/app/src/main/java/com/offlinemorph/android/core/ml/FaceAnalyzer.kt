@@ -47,11 +47,21 @@ data class FaceAnalysisSummary(
     val rightEye: FacePoint? = null,
     val rollDegrees: Float? = null,
     val primaryFaceBox: FaceBoundingBox? = null,
-    val primaryFaceBitmap: Bitmap? = null,
     /** All faces detected and surviving NMS, sorted best-first by priority score. */
     val allDetectedFaces: List<DetectedFaceResult> = emptyList(),
 )
 
 interface FaceAnalyzer {
-    suspend fun analyze(bitmap: Bitmap): FaceAnalysisSummary
+    /**
+     * Detects faces in [bitmap].
+     *
+     * @param includeEmbedding also run the ArcFace recogniser on the primary face. Only the swap
+     *   source needs this; skipping it for targets saves a ResNet-50 pass per image / video frame.
+     * @param includeGender also classify every face with genderage.onnx (male/female filters).
+     */
+    suspend fun analyze(
+        bitmap: Bitmap,
+        includeEmbedding: Boolean = false,
+        includeGender: Boolean = false,
+    ): FaceAnalysisSummary
 }
