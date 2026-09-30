@@ -32,6 +32,11 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Target devices (Galaxy S25 class and newer) are all arm64; skip the 32-bit and x86 native libs.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
