@@ -46,7 +46,11 @@ class OnDeviceFaceSwapEngine(
         val scaledRequest = if (request.maxImageSizePx > 0) request.scaledTo(request.maxImageSizePx) else request
         val needsGender = request.faceFilterMode == FaceFilterMode.MALE_ONLY ||
             request.faceFilterMode == FaceFilterMode.FEMALE_ONLY
-        val sourceAnalysis = faceAnalyzer.analyze(scaledRequest.sourceBitmap, includeEmbedding = true)
+        val sourceAnalysis = if (request.sourceEmbedding == null) {
+            faceAnalyzer.analyze(scaledRequest.sourceBitmap, includeEmbedding = true)
+        } else {
+            FaceAnalysisSummary(detectedFaces = 1, statusMessage = "Precomputed source embedding.", embedding = request.sourceEmbedding)
+        }
         val targetAnalysis = faceAnalyzer.analyze(scaledRequest.targetBitmap, includeGender = needsGender)
         val inswapperFile = File(modelsDirectory, ModelCatalog.INSWAPPER)
 

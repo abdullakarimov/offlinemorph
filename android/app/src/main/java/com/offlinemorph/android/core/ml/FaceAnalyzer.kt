@@ -31,6 +31,8 @@ data class DetectedFaceResult(
     val thumbnail: Bitmap?,
     /** True = male, false = female, null = unknown (genderage.onnx not installed). */
     val isMale: Boolean? = null,
+    /** Estimated age in years from genderage.onnx, or null when the model is not installed. */
+    val age: Int? = null,
 )
 
 data class FaceAnalysisSummary(
@@ -57,7 +59,7 @@ interface FaceAnalyzer {
      *
      * @param includeEmbedding also run the ArcFace recogniser on the primary face. Only the swap
      *   source needs this; skipping it for targets saves a ResNet-50 pass per image / video frame.
-     * @param includeGender also classify every face with genderage.onnx (male/female filters).
+     * @param includeGender also classify every face with genderage.onnx (gender and estimated age).
      */
     suspend fun analyze(
         bitmap: Bitmap,

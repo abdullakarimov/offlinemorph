@@ -4,14 +4,9 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.providers.NNAPIFlags
-import android.graphics.Bitmap
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.offlinemorph.android.core.ml.DetectedFaceResult
-import com.offlinemorph.android.core.ml.FaceAnalysisSummary
-import com.offlinemorph.android.core.ml.FaceAnalyzer
-import com.offlinemorph.android.core.ml.FaceBoundingBox
 import com.offlinemorph.android.core.ml.OnDeviceFaceSwapEngine
 import com.offlinemorph.android.core.ml.OrtSessionFactory
 import com.offlinemorph.android.core.ml.SwapRequest
@@ -19,7 +14,6 @@ import com.offlinemorph.android.feature.models.ModelCatalog
 import java.io.File
 import java.nio.FloatBuffer
 import java.util.EnumSet
-import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -57,9 +51,9 @@ class PipelineOnDeviceTest {
      */
     @Test
     fun swapPipeline_runsEndToEnd() = runBlocking {
-        val target = noiseBitmap(2048, 1536)
-        val keypoints = syntheticKeypoints(centerX = 1000f, centerY = 700f, scale = 6f)
-        val engine = OnDeviceFaceSwapEngine(modelsDir, FixedFaceAnalyzer(keypoints), OrtSessionFactory())
+        val target = TestFixtures.noiseBitmap(2048, 1536)
+        val keypoints = TestFixtures.syntheticKeypoints(centerX = 1000f, centerY = 700f, scale = 6f)
+        val engine = OnDeviceFaceSwapEngine(modelsDir, TestFixtures.FixedFaceAnalyzer(keypoints), OrtSessionFactory())
 
         val configs = listOf(
             "boost1" to SwapRequest(target, target, seamlessBlend = false),
@@ -129,41 +123,6 @@ class PipelineOnDeviceTest {
                 }.onFailure { Log.i(TAG, "bench %-20s %-17s FAILED: %s".format(fileName, provider, it.message)) }
             }
         }
-    }
-
-    private class FixedFaceAnalyzer(private val keypoints: FloatArray) : FaceAnalyzer {
-        private val embedding = FloatArray(512) { Random(7).nextFloat() - 0.5f }.let { v ->
-            val n = sqrt(v.fold(0f) { a, x -> a + x * x }); FloatArray(v.size) { v[it] / n }
-        }
-
-        override suspend fun analyze(bitmap: Bitmap, includeEmbedding: Boolean, includeGender: Boolean) =
-            FaceAnalysisSummary(
-                detectedFaces = 1,
-                statusMessage = "fixed",
-                embedding = embedding,
-                embeddingLength = embedding.size,
-                allDetectedFaces = listOf(
-                    DetectedFaceResult(0, FaceBoundingBox(700, 300, 1300, 1100, 0.9f), keypoints, null),
-                ),
-            )
-    }
-
-    private fun syntheticKeypoints(centerX: Float, centerY: Float, scale: Float): FloatArray {
-        val arcface = floatArrayOf(38.29f, 51.70f, 73.53f, 51.50f, 56.03f, 71.74f, 41.55f, 92.37f, 70.73f, 92.20f)
-        return FloatArray(10) { i ->
-            if (i % 2 == 0) centerX + (arcface[i] - 56f) * scale else centerY + (arcface[i] - 72f) * scale
-        }
-    }
-
-    private fun noiseBitmap(width: Int, height: Int): Bitmap {
-        val random = Random(1)
-        val pixels = IntArray(width * height) { i ->
-            val x = i % width; val y = i / width
-            val base = ((x + y) / 16) and 0xFF
-            val n = random.nextInt(32)
-            (0xFF shl 24) or (((base + n) and 0xFF) shl 16) or (((base / 2 + n) and 0xFF) shl 8) or (n * 4)
-        }
-        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     private fun randomData(shape: LongArray): FloatArray {

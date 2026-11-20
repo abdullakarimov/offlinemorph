@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.WindowInsets
@@ -19,9 +19,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offlinemorph.android.feature.aging.AgingScreen
+import com.offlinemorph.android.feature.ancestry.AncestryScreen
 import com.offlinemorph.android.feature.beautify.BeautifyScreen
 import com.offlinemorph.android.feature.beautify.BeautifyViewModel
 import com.offlinemorph.android.feature.consent.ConsentDialog
@@ -38,6 +40,7 @@ private val TABS = buildList {
     add("Photo Swap")
     add("Video Swap")
     if (FeatureFlags.agingEnabled) add("Aging")
+    if (FeatureFlags.ancestryEnabled) add("Ancestry")
     if (FeatureFlags.hairMakeupEnabled) add("Hair & Makeup")
     if (FeatureFlags.beautifyEnabled) add("Beautify")
     add("Setup")
@@ -73,7 +76,7 @@ fun OfflineMorphApp() {
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.systemBars)
         ) {
-            TabRow(selectedTabIndex = selectedTab) {
+            ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 8.dp) {
                 TABS.forEachIndexed { index, title ->
                     Tab(
                         selected = selectedTab == index,
@@ -86,6 +89,7 @@ fun OfflineMorphApp() {
                 "Photo Swap"   -> SwapScreen(viewModel = swapViewModel)
                 "Video Swap"   -> VideoSwapScreen()
                 "Aging"        -> AgingScreen()
+                "Ancestry"     -> AncestryScreen()
                 "Hair & Makeup" -> HairMakeupScreen(viewModel = hairMakeupViewModel)
                 "Beautify"     -> BeautifyScreen(viewModel = beautifyViewModel)
                 "Setup"        -> AiSetupScreen(viewModel = swapViewModel)

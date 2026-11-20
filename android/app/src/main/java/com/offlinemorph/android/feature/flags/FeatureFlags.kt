@@ -11,11 +11,11 @@ object FeatureFlags {
     /** Phase B — Face swap quality uplift (boundary blending, multi-face, quality profiles). */
     val faceSwapUpliftEnabled: Boolean = false
 
-    /** Phase C — AI Aging and De-aging synthesis. No public ONNX model available yet; hidden until one ships. */
-    val agingEnabled: Boolean = false
+    /** Phase C — AI Aging and De-aging synthesis (FRAN re-aging model, aging feature pack). */
+    val agingEnabled: Boolean = true
 
-    /** Phase C — Ancestry blend synthesis. */
-    val ancestryEnabled: Boolean = false
+    /** Phase C — Ancestry blend synthesis (ArcFace embedding blend rendered with inswapper). */
+    val ancestryEnabled: Boolean = true
 
     /** Phase D — Hair and Makeup studio. */
     val hairMakeupEnabled: Boolean = true

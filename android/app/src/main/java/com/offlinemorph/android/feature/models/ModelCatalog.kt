@@ -33,6 +33,7 @@ object ModelCatalog {
     const val GFPGAN        = "GFPGANv1.4.onnx"
     const val GENDERAGE     = "genderage.onnx"
     const val FACE_PARSING  = "face_parsing.onnx"
+    const val FRAN          = "fran.onnx"
 
     val requiredModels: List<ModelSpec> = listOf(
         ModelSpec(
@@ -100,6 +101,19 @@ object ModelCatalog {
             featurePack = "hair_makeup",
             downloadUrls = listOf(
                 "https://huggingface.co/bluefoxcreation/Face_parsing_onnx/resolve/main/faceparser_sim.onnx",
+            ),
+        ),
+        // FRAN face re-aging U-Net (MIT; weights timroelofs123/face_re-aging, ONNX export by FaceFusion).
+        ModelSpec(
+            fileName = FRAN,
+            role = "face re-aging (aging & de-aging)",
+            required = false,
+            tier = ModelTier.FEATURE_PACK,
+            featurePack = "aging",
+            version = "3.6.0",
+            sha256 = "725bb979bda169e0469de31d35ded1f6fcca3413440564d375c92c863570933b",
+            downloadUrls = listOf(
+                "https://huggingface.co/facefusion/models-3.6.0/resolve/main/fran.onnx",
             ),
         ),
     )

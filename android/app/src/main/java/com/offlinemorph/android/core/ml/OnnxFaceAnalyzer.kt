@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import ai.onnxruntime.OrtSession
 import com.offlinemorph.android.feature.models.ModelCatalog
 import java.io.File
+import kotlin.math.roundToInt
 import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.min
@@ -96,7 +97,10 @@ class OnnxFaceAnalyzer(
         val allDetectedFaces: List<DetectedFaceResult> =
             if (includeGender && genderageFile.isFile && rawDetectedFaces.isNotEmpty()) {
                 val genderSession = sessionFactory.session(genderageFile)
-                rawDetectedFaces.map { face -> face.copy(isMale = classifyGender(bitmap, face.box, genderSession)) }
+                rawDetectedFaces.map { face ->
+                    val attributes = classifyAttributes(bitmap, face.box, genderSession)
+                    face.copy(isMale = attributes?.first, age = attributes?.second)
+                }
             } else {
                 rawDetectedFaces
             }
@@ -957,11 +961,11 @@ class OnnxFaceAnalyzer(
      *
      * The face is centred in a 96×96 crop scaled so the box's longer side spans 64 px, and fed
      * as raw RGB 0–255 — the model normalises internally via its leading `bn_data` layer.
-     * Output[0] = female score, output[1] = male score.
+     * Output[0] = female score, output[1] = male score, output[2] = age / 100.
      *
-     * Returns true (male), false (female), or null on any failure.
+     * Returns (isMale, age in years), or null on any failure.
      */
-    private fun classifyGender(bitmap: Bitmap, box: FaceBoundingBox, session: OrtSession): Boolean? {
+    private fun classifyAttributes(bitmap: Bitmap, box: FaceBoundingBox, session: OrtSession): Pair<Boolean, Int>? {
         return runCatching {
             val scale = 64f / max(box.right - box.left, box.bottom - box.top).coerceAtLeast(1)
             val cx = (box.left + box.right) * 0.5f
@@ -976,8 +980,8 @@ class OnnxFaceAnalyzer(
             sessionFactory.createFloatTensor(tensor, longArrayOf(1, 3, 96, 96)).use { inputTensor ->
                 session.run(mapOf(inputName to inputTensor)).use { result ->
                     val out = OrtValueUtils.extractFloatOutputs(result).firstOrNull()?.data ?: return null
-                    if (out.size < 2) return null
-                    out[1] > out[0]
+                    if (out.size < 3) return null
+                    (out[1] > out[0]) to (out[2] * 100f).roundToInt().coerceIn(0, 100)
                 }
             }
         }.getOrNull()

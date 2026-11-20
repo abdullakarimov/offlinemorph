@@ -11,24 +11,10 @@ class LocalModelManager(
             modelsDirectory.mkdirs()
         }
 
-        val installedModels = ModelCatalog.requiredModels.filter { spec ->
-            installedAndValid(spec)
-        }
-        val missingModels = ModelCatalog.requiredModels.filterNot { spec ->
-            installedAndValid(spec)
-        }
-        val optionalInstalled = ModelCatalog.optionalModels.filter { spec ->
-            installedAndValid(spec)
-        }
-        val optionalMissing = ModelCatalog.optionalModels.filterNot { spec ->
-            installedAndValid(spec)
-        }
-        val featurePackInstalled = ModelCatalog.featurePackModels.filter { spec ->
-            installedAndValid(spec)
-        }
-        val featurePackMissing = ModelCatalog.featurePackModels.filterNot { spec ->
-            installedAndValid(spec)
-        }
+        val (installedModels, missingModels) = ModelCatalog.requiredModels.partition(::installedAndValid)
+        val (optionalInstalled, optionalMissing) = ModelCatalog.optionalModels.partition(::installedAndValid)
+        val (featurePackInstalled, featurePackMissing) =
+            ModelCatalog.featurePackModels.partition(::installedAndValid)
 
         return ModelStatus(
             ready = missingModels.isEmpty(),
@@ -49,7 +35,15 @@ class LocalModelManager(
         val file = File(modelsDirectory, spec.fileName)
         if (!file.isFile) return false
         val expected = spec.sha256 ?: return true
-        return sha256Hex(file) == expected.lowercase()
+        // Hashing a 100+ MB model takes a noticeable fraction of a second, so the digest is
+        // cached until the file changes on disk.
+        val key = Triple(file.absolutePath, file.length(), file.lastModified())
+        val digest = digestCache[key] ?: sha256Hex(file).also { digestCache[key] = it }
+        return digest == expected.lowercase()
+    }
+
+    private companion object {
+        val digestCache = java.util.concurrent.ConcurrentHashMap<Triple<String, Long, Long>, String>()
     }
 
     private fun sha256Hex(file: File): String {

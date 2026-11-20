@@ -5,11 +5,15 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.offlinemorph.android.core.image.AndroidBitmapLoader
+import com.offlinemorph.android.core.ml.EngineError
 import com.offlinemorph.android.core.ml.EngineResult
 import com.offlinemorph.android.core.ml.aging.AgingEngine
 import com.offlinemorph.android.core.ml.aging.AgingRequest
-import com.offlinemorph.android.core.ml.aging.StubAgingEngine
+import com.offlinemorph.android.core.ml.OnnxFaceAnalyzer
+import com.offlinemorph.android.core.ml.OrtSessionFactory
+import com.offlinemorph.android.core.ml.aging.OnDeviceAgingEngine
 import com.offlinemorph.android.feature.flags.FeatureFlags
+import com.offlinemorph.android.feature.models.ModelPaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +26,13 @@ class AgingViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
 
-    private val agingEngine: AgingEngine = StubAgingEngine()
+    // Engines are class-body properties: AndroidViewModelFactory needs a plain (Application) constructor.
+    private val agingEngine: AgingEngine = ModelPaths.appModelsDirectory(application).let { dir ->
+        OnDeviceAgingEngine(
+            modelsDirectory = dir,
+            faceAnalyzer = OnnxFaceAnalyzer(dir, OrtSessionFactory()),
+        )
+    }
     private val bitmapLoader = AndroidBitmapLoader(application.contentResolver)
 
     private val _uiState = MutableStateFlow(
@@ -55,7 +65,7 @@ class AgingViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(agingState = AgingUiState.Loading("Loading source image…"), isWorking = true) }
 
-            val bitmapResult = runCatching { bitmapLoader.load(sourceUri) }
+            val bitmapResult = withContext(Dispatchers.IO) { runCatching { bitmapLoader.load(sourceUri, maxDimensionPx = MAX_IMAGE_PX) } }
             if (bitmapResult.isFailure) {
                 _uiState.update {
                     it.copy(
@@ -84,7 +94,7 @@ class AgingViewModel(
                     agingState = when (engineResult) {
                         is EngineResult.Success -> AgingUiState.Success(engineResult.value.outputBitmap)
                         is EngineResult.Failure -> when (engineResult.error) {
-                            is com.offlinemorph.android.core.ml.EngineError.ModelNotFound ->
+                            is EngineError.ModelNotFound ->
                                 AgingUiState.ModelNotReady
                             else -> AgingUiState.Error(engineResult.statusMessage)
                         }
@@ -92,5 +102,10 @@ class AgingViewModel(
                 )
             }
         }
+    }
+
+    private companion object {
+        /** Longest edge the source photo is decoded at; FRAN works on a 1024 px face crop. */
+        const val MAX_IMAGE_PX = 3072
     }
 }

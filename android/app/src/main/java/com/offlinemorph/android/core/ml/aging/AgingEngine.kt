@@ -12,11 +12,14 @@ import com.offlinemorph.android.core.ml.EngineResult
  *                        Practical range is [-50, +50]; values outside this range are clamped.
  * @param intensity       realism blend factor in [0f, 1f]. 1.0 applies the full transformation;
  *                        lower values blend toward the original image.
+ * @param currentAgeYears the subject's current age, used only when the engine cannot estimate
+ *                        it itself (e.g. genderage.onnx is not installed). Null = engine default.
  */
 data class AgingRequest(
     val sourceBitmap: Bitmap,
     val ageOffsetYears: Int,
     val intensity: Float = 1.0f,
+    val currentAgeYears: Int? = null,
 )
 
 /**

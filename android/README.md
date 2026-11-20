@@ -47,6 +47,26 @@ Build a release artifact:
 ./gradlew :app:assembleRelease
 ```
 
+## Tests
+
+Instrumented tests live in `app/src/androidTest/`. Model-backed tests run only when the models
+are already installed in the app (download them from the Setup tab first) and are skipped
+otherwise. Run them without uninstalling the app, because `connectedAndroidTest` wipes the
+downloaded models:
+
+```bash
+./gradlew :app:installDebug :app:installDebugAndroidTest
+adb shell am instrument -w com.offlinemorph.android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+`GoldenImageRegressionTest` compares outputs against reference PNGs in
+`app/src/androidTest/assets/goldens/`. A missing golden is recorded on the device and the test is
+skipped. To record or refresh goldens, run with `-e recordGoldens true` and pull them back:
+
+```bash
+adb pull /sdcard/Android/data/com.offlinemorph.android/files/goldens/. app/src/androidTest/assets/goldens/
+```
+
 ## Release Signing
 
 Release builds require signing configuration.
@@ -69,9 +89,16 @@ If release credentials are missing, the build intentionally fails fast.
 app/src/main/java/com/offlinemorph/android/
   core/
     image/      # bitmap loading and low-level image ops
-    ml/         # ONNX sessions, tensor conversion, alignment, swap/enhance engines
+    ml/         # ONNX sessions, tensor conversion, alignment, swap/enhance engines;
+                # one subpackage per feature engine (aging, ancestry, beautify,
+                # hairmakeup, relight, backgroundswap)
     video/      # decoder, encoder, frame indexing, video swap orchestration
   feature/
+    aging/      # FRAN aging / de-aging screen
+    ancestry/   # two-face identity blend screen
+    beautify/   # skin smoothing and portrait retouch
+    hairmakeup/ # face-parsing hair and lip colour
+    flags/      # build-time feature flags
     consent/    # consent UX and policy gating
     device/     # capability assessment for local execution paths
     models/     # model catalog, download/install/import management

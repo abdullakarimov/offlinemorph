@@ -77,12 +77,12 @@ fun AgingScreen(viewModel: AgingViewModel = viewModel()) {
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "The on-device aging model has not been downloaded yet. Open the Setup tab and tap \"Download Required Models\" to get all AI model files.",
+                            "The on-device aging model (fran.onnx, 131 MB) has not been downloaded yet. Open the Setup tab and tap \"Download All (incl. Optional)\". Installing genderage.onnx too lets the app estimate the current age for more accurate results.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
-                return@Column
+                // Controls stay visible so the user can run again once the model is downloaded.
             }
             else -> Unit
         }

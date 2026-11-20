@@ -56,8 +56,8 @@ Selection policy for integration:
 | Hair-Level Background Matting | `onnx-community/BiRefNet-portrait-ONNX`, `onnx-community/BiRefNet_lite-ONNX`, `onnx-community/modnet-webnn`, `frankminors123/U2Net_Portrait_ONNX` | Start with `BiRefNet_lite` and `BiRefNet-portrait` for quality/perf comparison. |
 | Relighting Depth Prior (for approximate normal estimation) | `onnx-community/depth-anything-v2-small`, `onnx-community/depth-anything-v2-base`, `Heliosoph/zoedepth-nyu-kitti-onnx` | Use monocular depth as first-stage prior for local relight engine. |
 | Landmark Alternative (if not using MediaPipe Tasks) | `astaileyyoung/FaceMeshONNX` | Experimental fallback only; primary recommendation remains MediaPipe Tasks for production. |
-| Aging / De-aging Generator | No strong ONNX mobile-ready match found via Hub query | Plan to export/convert a vetted aging model to ONNX and publish internal artifact mirror. |
-| Ancestry Blend Generator | No strong ONNX mobile-ready match found via Hub query | Implement as internal latent-blend pipeline using ArcFace-style embeddings + custom generator. |
+| Aging / De-aging Generator | `facefusion/models-3.6.0` → `fran.onnx` (131 MB, FRAN U-Net, MIT; weights `timroelofs123/face_re-aging`, MIT). Rejected: `facefusion/models-3.1.0` → `styleganex_age.onnx` (1.34 GB, S-Lab 1.0 non-commercial). | **Adopted (2026-11-20).** 1024 px FFHQ-aligned crop, `direction` = [current, target] age / 100. Current age from `genderage.onnx`. |
+| Ancestry Blend Generator | No dedicated model needed | **Adopted (2026-11-20).** Blend two ArcFace (`w600k_r50`) embeddings and render with `inswapper_128` as the identity-conditioned generator. |
 
 ### Model Intake Checklist
 
@@ -382,7 +382,7 @@ Follow existing state-driven ViewModel patterns used by current swap flow.
 2. ✅ Build shared geometry/mask cache service.
 3. ✅ Deliver aging feature vertical slice (engine + UI + benchmarks).
 4. ✅ Add benchmark harness for latency/memory/thermal metrics.
-5. Add golden-image regression tests for swap and aging outputs.
+5. ✅ Add golden-image regression tests for swap and aging outputs.
 
 ## Implementation Progress
 
@@ -428,7 +428,7 @@ Sprint 1 status:
 - ✅ Item 2: geometry/mask cache
 - ✅ Item 3: aging vertical slice (engine contract + stub + UI; on-device model pending)
 - ✅ Item 4: benchmark harness (MetricsRecorder)
-- Item 5: golden-image regression tests (pending)
+- ✅ Item 5: golden-image regression tests (completed in Iteration 8)
 
 ### Iteration 4 — Aging Tab Live + Phase C Ancestry + Phase B Poisson Seam (completed 2026-06-03)
 
@@ -507,7 +507,7 @@ Files modified:
   - Removed the old "Download AI Files" and "Refresh AI Pack" buttons; kept "Refresh" as a concise `OutlinedButton`
   - `material-icons-extended` dependency added to `app/build.gradle.kts` for `ErrorOutline` and `RadioButtonUnchecked`
 
-### Next: Iteration 7 — Aging hidden, Beautify (OpenCV) + Hair & Makeup (BiSeNet) implemented
+### Iteration 7 — Aging hidden, Beautify (OpenCV) + Hair & Makeup (BiSeNet) implemented (completed)
 
 **Completed:**
 
@@ -523,20 +523,66 @@ Files modified:
 
 **Model availability policy (established):** Features without publicly available ONNX models are hidden via `FeatureFlags`; only features with a downloadable public model URL are enabled.
 
-### Next: Iteration 8 — Ancestry UI Vertical Slice + Relight/Background Engine Contracts
+**Known gap:** Beautify's eye-enlarge, face-slim and teeth-whiten sliders are accepted but do not change the output yet; only skin smoothing is implemented.
+
+### Iteration 8 — Aging (FRAN) + Ancestry live, Relight/Background contracts, golden-image tests (completed 2026-11-20)
+
+Model re-check: FaceFusion now publishes an MIT-licensed ONNX export of FRAN, a face re-aging network. The model-availability policy is met, so Aging is re-enabled. Ancestry needs no new model: inswapper is already an identity-conditioned generator.
+
+Files added:
+
+- `core/ml/aging/OnDeviceAgingEngine.kt` — FRAN pipeline mirroring FaceFusion's `age_modifier`:
+  - aligns each face (up to 4) to the FFHQ template at 1024 px
+  - input: RGB in [0, 1]; `direction` = [current age, target age] / 100, clipped to [0, 1]
+  - output: a full image, pasted back with a feathered matte scaled by intensity
+  - current age: genderage estimate, then `AgingRequest.currentAgeYears`, then 30
+- `core/ml/ancestry/OnDeviceAncestryEngine.kt` — ArcFace embeddings of faces A and B, blended as `normalize(r·Â + (1−r)·B̂)`; inswapper renders the blend onto the base portrait. Runs the GFPGAN pass when installed, then fades toward the original by intensity.
+- `feature/ancestry/AncestryUiState.kt`, `AncestryViewModel.kt`, `AncestryScreen.kt` — screen with:
+  - Face A and Face B pickers
+  - optional base portrait (defaults to Face A's photo)
+  - blend-ratio and intensity sliders
+  - disclosure card
+- `core/ml/relight/RelightEngine.kt` + `StubRelightEngine.kt` — Phase F contract: `VirtualLight` rig (azimuth, elevation, intensity, softness, colour), ambient level, optional normal-map output.
+- `core/ml/backgroundswap/BackgroundSwapEngine.kt` + `StubBackgroundSwapEngine.kt` — Phase G contract:
+  - `BackgroundMode`: Image, Bokeh, SolidColor or Transparent
+  - edge refinement and lighting-match controls
+  - the alpha matte is returned so the subject can be re-composited
+- `androidTest/.../GoldenImage.kt` — golden-image comparison: tolerance-based (mean absolute difference plus outlier fraction), records missing goldens on the device, writes actual and diff images on failure.
+- `androidTest/.../TestFixtures.kt` — deterministic synthetic inputs (noise image, cartoon portrait, keypoints, embeddings, fixed face analyzer). `PipelineOnDeviceTest` now uses them.
+- `androidTest/.../GoldenImageRegressionTest.kt`:
+  - CPU-only goldens: beautify and paste-back (feathered and Poisson)
+  - model-backed goldens for swap and aging, skipped when the model is absent
+  - ancestry embedding-math checks and missing-model contract checks
+
+Files modified:
+
+- `feature/models/ModelCatalog.kt` — `FRAN` feature-pack entry ("aging") with pinned SHA-256.
+- `feature/models/LocalModelManager.kt` — caches SHA-256 digests by (path, size, mtime) and partitions each model list once. Before, every status refresh hashed each checksummed model twice.
+- `core/ml/FaceAnalyzer.kt`, `OnnxFaceAnalyzer.kt` — `DetectedFaceResult.age` from genderage output[2] × 100.
+- `core/ml/FaceSwapEngine.kt`, `OnDeviceFaceSwapEngine.kt` — `SwapRequest.sourceEmbedding` lets a caller swap in a precomputed identity.
+- `core/ml/aging/AgingEngine.kt` — `AgingRequest.currentAgeYears` fallback.
+- `feature/aging/AgingViewModel.kt` — uses `OnDeviceAgingEngine`; decodes the photo off the main thread (capped at 3072 px).
+- `feature/aging/AgingScreen.kt` — the model-missing card points to "Download All", and controls stay visible so the user can retry after downloading.
+- `feature/flags/FeatureFlags.kt` — `agingEnabled = true`, `ancestryEnabled = true`.
+- `OfflineMorphApp.kt` — Ancestry tab; scrollable tab row (7 tabs).
+
+App tabs: Photo Swap · Video Swap · Aging · Ancestry · Hair & Makeup · Beautify · Setup.
+
+Open follow-ups:
+
+- Goldens recorded 2026-11-20 on the Android 16 arm64 emulator: beautify, paste-back (feathered and Poisson) and swap. Reruns match exactly. Still to do: record `aging_fran_plus30` on a device that has `fran.onnx` installed (see `android/README.md` → Tests).
+- On the emulator, `PipelineOnDeviceTest.executionProviderBenchmark` kills the test process after the recognizer benchmarks; likely out of memory from extra NNAPI sessions. `swapPipeline_runsEndToEnd` passes.
+- Run the Model Intake Checklist for `fran.onnx`. Licence and provenance are recorded above. Still to do: on-device latency, memory and thermal benchmarks, and a review of artifacts on real portraits.
+
+### Next: Iteration 9 — Phase G Background Swap (BiRefNet_lite) + Phase F Relight prior
 
 Planned work:
 
-1. `feature/ancestry/AncestryUiState.kt` — state sealed types (Idle/Loading/Success/Error/Unavailable)
-2. `feature/ancestry/AncestryViewModel.kt` — AndroidViewModel wiring `StubAncestryEngine`; same constructor-body pattern used for `AgingViewModel`
-3. `feature/ancestry/AncestryScreen.kt` — two-portrait picker, blend ratio slider (0..1), Run/Clear, pipeline card
-4. `feature/flags/FeatureFlags.kt` — `ancestryEnabled = true`
-5. Wire "Ancestry" tab into `OfflineMorphApp`
-6. `core/ml/relight/RelightEngine.kt` + stub (Phase F)
-7. `core/ml/backgroundswap/BackgroundSwapEngine.kt` + stub (Phase G)
-
-
-
+1. Benchmark `onnx-community/BiRefNet_lite-ONNX` vs `BiRefNet-portrait` on device; add the chosen model to `ModelCatalog` as a feature pack.
+2. `OnDeviceBackgroundSwapEngine` implementing `BackgroundSwapEngine` (matte → Image, Bokeh or SolidColor composite, with anti-halo refinement).
+3. Background tab and screen behind `backgroundSwapEnabled`.
+4. Depth-prior spike for relighting with `depth-anything-v2-small`: depth → normals → Lambert shading driven by `VirtualLight`.
+5. Golden tests for background compositing.
 
 A feature is considered done when all conditions are met:
 

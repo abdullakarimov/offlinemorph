@@ -28,6 +28,11 @@ data class SwapRequest(
     val pixelBoost: Int = 1,
     /** Poisson-blend the swapped face into the target so lighting and skin tone match. */
     val seamlessBlend: Boolean = true,
+    /**
+     * Precomputed ArcFace identity embedding to swap in. When set, [sourceBitmap] is not
+     * analysed (used by the ancestry blend, whose identity is a mix of two faces).
+     */
+    val sourceEmbedding: FloatArray? = null,
 ) {
     /**
      * Returns a copy of this request with both bitmaps downscaled so that their longest
