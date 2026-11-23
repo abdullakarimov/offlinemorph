@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.offlinemorph.android.feature.aging.AgingScreen
-import com.offlinemorph.android.feature.ancestry.AncestryScreen
 import com.offlinemorph.android.feature.beautify.BeautifyScreen
 import com.offlinemorph.android.feature.beautify.BeautifyViewModel
 import com.offlinemorph.android.feature.consent.ConsentDialog
@@ -40,7 +39,6 @@ private val TABS = buildList {
     add("Photo Swap")
     add("Video Swap")
     if (FeatureFlags.agingEnabled) add("Aging")
-    if (FeatureFlags.ancestryEnabled) add("Ancestry")
     if (FeatureFlags.hairMakeupEnabled) add("Hair & Makeup")
     if (FeatureFlags.beautifyEnabled) add("Beautify")
     add("Setup")
@@ -89,7 +87,6 @@ fun OfflineMorphApp() {
                 "Photo Swap"   -> SwapScreen(viewModel = swapViewModel)
                 "Video Swap"   -> VideoSwapScreen()
                 "Aging"        -> AgingScreen()
-                "Ancestry"     -> AncestryScreen()
                 "Hair & Makeup" -> HairMakeupScreen(viewModel = hairMakeupViewModel)
                 "Beautify"     -> BeautifyScreen(viewModel = beautifyViewModel)
                 "Setup"        -> AiSetupScreen(viewModel = swapViewModel)

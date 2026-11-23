@@ -135,12 +135,8 @@ class SwapViewModel(
         }
     }
 
-    fun toggleEnhancer(enabled: Boolean) {
-        _uiState.update { it.copy(isEnhancerEnabled = enabled) }
-    }
-
-    fun toggleHighDetail(enabled: Boolean) {
-        _uiState.update { it.copy(isHighDetailEnabled = enabled) }
+    fun setQualityProfile(profile: QualityProfile) {
+        _uiState.update { it.copy(qualityProfile = profile) }
     }
 
     fun setFaceFilterMode(mode: com.offlinemorph.android.core.ml.FaceFilterMode) {
@@ -159,6 +155,7 @@ class SwapViewModel(
             val shouldPromptInstall = !status.ready && !hasAnyAiFiles
             val enhancerAvailable = status.optionalInstalledModels.any { it.fileName == ModelCatalog.GFPGAN }
             val genderModelAvailable = status.optionalInstalledModels.any { it.fileName == ModelCatalog.GENDERAGE }
+            val parsingModelAvailable = status.optionalInstalledModels.any { it.fileName == ModelCatalog.FACE_PARSING }
             val installHint = buildString {
                 append("Required AI files: ${ModelCatalog.expectedFileNames().joinToString()}")
                 if (status.optionalMissingModels.isNotEmpty()) {
@@ -189,6 +186,7 @@ class SwapViewModel(
                         current.showMissingAiPackAlert || shouldPromptInstall
                     },
                     isEnhancerModelAvailable = enhancerAvailable,
+                    isParsingModelAvailable = parsingModelAvailable,
                     isGenderModelAvailable = genderModelAvailable,
                     downloadItems = if (current.isWorking) current.downloadItems else items,
                 )
@@ -274,6 +272,8 @@ class SwapViewModel(
 
             _uiState.update { it.copy(isWorking = false, modelInstallMessage = summary) }
             refreshModelStatus()
+            // New models get their NPU graphs compiled in the background.
+            com.offlinemorph.android.core.ml.NpuWarmup.start(ModelPaths.appModelsDirectory(getApplication()))
         }
     }
 
@@ -331,18 +331,25 @@ class SwapViewModel(
                 return@launch
             }
 
+            // The user's profile, lowered if the device is hot or short on memory.
+            val profile = effectiveProfile(_uiState.value.qualityProfile, policy.qualityProfile)
+            val settings = profile.swapSettings()
             val swapRequest = SwapRequest(
                 sourceBitmap = sourceBitmapResult.getOrThrow().bitmap,
                 targetBitmap = targetBitmapResult.getOrThrow().bitmap,
-                // Enhancer is only permitted when both the user has enabled it AND the
-                // current execution policy allows it (thermal / memory guardrail).
-                enhancerEnabled = _uiState.value.isEnhancerEnabled && policy.enhancerEnabled,
+                enhancerEnabled = settings.enhancer && policy.enhancerEnabled,
                 targetFaceIndex = _uiState.value.selectedTargetFaceIndex,
                 faceFilterMode  = _uiState.value.faceFilterMode,
-                maxImageSizePx  = policy.maxImageSizePx,
-                // Pixel boost quadruples inswapper cost, so it is gated by the thermal/memory policy.
-                pixelBoost      = if (_uiState.value.isHighDetailEnabled && policy.qualityProfile == QualityProfile.STUDIO) 2 else 1,
+                maxImageSizePx  = minOf(settings.maxImageSizePx, policy.maxImageSizePx),
+                pixelBoost      = settings.pixelBoost,
+                seamlessBlend   = settings.seamlessBlend,
+                occlusionAware  = settings.occlusionAware,
             )
+            if (profile != _uiState.value.qualityProfile) {
+                _uiState.update {
+                    it.copy(swapState = SwapUiState.Loading("Using ${profile.displayName} quality (${policy.reason})..."))
+                }
+            }
 
             // Run the full inference pipeline off the main thread.
             // onProgress callbacks update _uiState directly — MutableStateFlow.update is thread-safe.

@@ -15,6 +15,8 @@ data class VideoSwapRequest(
     val targetFaceIndex: Int = 0,
     /** Determines which faces in each frame are swapped. */
     val faceFilterMode: com.offlinemorph.android.core.ml.FaceFilterMode = com.offlinemorph.android.core.ml.FaceFilterMode.SPECIFIC,
+    /** Smooth face landmarks across frames to stop the swapped face shimmering. */
+    val temporalSmoothing: Boolean = true,
 )
 
 data class VideoSwapResult(

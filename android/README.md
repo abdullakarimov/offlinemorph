@@ -11,7 +11,7 @@ This module contains the native Android application that runs portrait AI workfl
 - Kotlin + Jetpack Compose UI and feature screens
 - ONNX Runtime Android inference sessions
 - OpenCV-based preprocessing and image-space transforms
-- NNAPI-aware execution path with automatic fallback behavior
+- Hexagon NPU execution (QNN HTP, FP16) for verified models, with background graph compilation, an on-disk compiled-graph cache and CPU fallback
 - Local image and video pipelines (decode, process, encode)
 - Local model management, install, and discovery flows
 
@@ -20,7 +20,7 @@ This module contains the native Android application that runs portrait AI workfl
 - Language and UI: Kotlin, Jetpack Compose, Material 3
 - Build Toolchain: Android Gradle Plugin 8.5.2, Kotlin 1.9.24, Java 17
 - Android Targets: minSdk 29, targetSdk 35, compileSdk 35
-- ML Runtime: ONNX Runtime Android 1.18.0
+- ML Runtime: ONNX Runtime Android with the QNN execution provider (`onnxruntime-android-qnn` 1.29.0). Verified models run on the Snapdragon Hexagon NPU; the rest run on the CPU (see `NpuPolicy` in `core/ml/OrtSessionFactory.kt`)
 - Vision and CV: OpenCV 4.10.0
 - Async Runtime: Kotlin Coroutines 1.8.1
 - Lifecycle and State: AndroidX Lifecycle Runtime + ViewModel Compose
@@ -59,6 +59,8 @@ downloaded models:
 adb shell am instrument -w com.offlinemorph.android.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
+`NpuBenchmarkTest` is a diagnostic. It runs every installed model on the CPU and on the NPU and logs latency and how closely the outputs agree, under the `OMNpu` log tag.
+
 `GoldenImageRegressionTest` compares outputs against reference PNGs in
 `app/src/androidTest/assets/goldens/`. A missing golden is recorded on the device and the test is
 skipped. To record or refresh goldens, run with `-e recordGoldens true` and pull them back:
@@ -90,12 +92,12 @@ app/src/main/java/com/offlinemorph/android/
   core/
     image/      # bitmap loading and low-level image ops
     ml/         # ONNX sessions, tensor conversion, alignment, swap/enhance engines;
-                # one subpackage per feature engine (aging, ancestry, beautify,
-                # hairmakeup, relight, backgroundswap)
+                # one subpackage per feature engine (aging, beautify, hairmakeup,
+                # relight, backgroundswap); face/ holds shared region parsing,
+                # pixel effects and warps
     video/      # decoder, encoder, frame indexing, video swap orchestration
   feature/
     aging/      # FRAN aging / de-aging screen
-    ancestry/   # two-face identity blend screen
     beautify/   # skin smoothing and portrait retouch
     hairmakeup/ # face-parsing hair and lip colour
     flags/      # build-time feature flags

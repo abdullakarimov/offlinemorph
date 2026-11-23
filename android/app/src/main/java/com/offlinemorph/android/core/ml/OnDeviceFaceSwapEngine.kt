@@ -5,6 +5,9 @@ import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
 import android.graphics.Bitmap
 import android.util.Log
+import com.offlinemorph.android.core.ml.face.FaceClass
+import com.offlinemorph.android.core.ml.face.FaceRegionParser
+import com.offlinemorph.android.core.ml.face.dilated
 import com.offlinemorph.android.feature.models.ModelCatalog
 import java.io.File
 import kotlin.math.sqrt
@@ -17,6 +20,7 @@ class OnDeviceFaceSwapEngine(
     private val sessionFactory: OrtSessionFactory,
 ) : FaceSwapEngine {
     private val enhancer = OnDeviceFaceEnhancer(modelsDirectory, sessionFactory)
+    private val regionParser = FaceRegionParser(modelsDirectory, sessionFactory)
 
     /** Cached emap extracted from inswapper_128.onnx on first swap run. */
     @Volatile private var cachedEmap: FloatArray? = null
@@ -46,11 +50,7 @@ class OnDeviceFaceSwapEngine(
         val scaledRequest = if (request.maxImageSizePx > 0) request.scaledTo(request.maxImageSizePx) else request
         val needsGender = request.faceFilterMode == FaceFilterMode.MALE_ONLY ||
             request.faceFilterMode == FaceFilterMode.FEMALE_ONLY
-        val sourceAnalysis = if (request.sourceEmbedding == null) {
-            faceAnalyzer.analyze(scaledRequest.sourceBitmap, includeEmbedding = true)
-        } else {
-            FaceAnalysisSummary(detectedFaces = 1, statusMessage = "Precomputed source embedding.", embedding = request.sourceEmbedding)
-        }
+        val sourceAnalysis = faceAnalyzer.analyze(scaledRequest.sourceBitmap, includeEmbedding = true)
         val targetAnalysis = faceAnalyzer.analyze(scaledRequest.targetBitmap, includeGender = needsGender)
         val inswapperFile = File(modelsDirectory, ModelCatalog.INSWAPPER)
 
@@ -63,7 +63,9 @@ class OnDeviceFaceSwapEngine(
             return SwapRunResult(statusMessage = "No face found in the source image. ${sourceAnalysis.statusMessage}")
         }
 
-        val targetKeypoints = selectTargetKeypoints(targetAnalysis, request)
+        val targetKeypoints = selectTargetKeypoints(targetAnalysis, request).let { selected ->
+            request.keypointTransform?.invoke(selected) ?: selected
+        }
         if (targetKeypoints.isEmpty()) {
             return SwapRunResult(
                 statusMessage = if (request.faceFilterMode == FaceFilterMode.SPECIFIC) {
@@ -86,8 +88,14 @@ class OnDeviceFaceSwapEngine(
                     if (targetKeypoints.size > 1) "Swapping face ${i + 1} / ${targetKeypoints.size}..."
                     else "Running Inswapper...",
                 )
+                val regionMask = if (request.occlusionAware && regionParser.hasModel()) {
+                    onProgress("Masking occlusions...")
+                    occlusionMask(scaledRequest.targetBitmap, kps)
+                } else {
+                    null
+                }
                 output = replacing(output, scaledRequest.targetBitmap) {
-                    swapFace(session, output, kps, latent, boost, request.seamlessBlend)
+                    swapFace(session, output, kps, latent, boost, request.seamlessBlend, regionMask)
                 }
                 if (request.enhancerEnabled) {
                     onProgress("Enhancing Facial Details...")
@@ -147,6 +155,7 @@ class OnDeviceFaceSwapEngine(
         latent: FloatArray,
         boost: Int,
         seamless: Boolean,
+        regionMask: ((android.graphics.Rect) -> Mat?)? = null,
     ): Bitmap {
         val size = FaceAlignmentOps.ALIGNED_SIZE
         val cropSize = size * boost
@@ -184,11 +193,36 @@ class OnDeviceFaceSwapEngine(
 
         val patch = Mat(cropSize, cropSize, CvType.CV_8UC3).apply { put(0, 0, outBytes) }
         try {
-            return FaceAlignmentOps.pasteBack(target, patch, FaceAlignmentOps.invert(toCrop), seamless)
+            return FaceAlignmentOps.pasteBack(target, patch, FaceAlignmentOps.invert(toCrop), seamless, regionMask = regionMask)
         } finally {
             patch.release()
         }
     }
+
+    /**
+     * Parsed face region of the *original* target (skin, brows, eyes, glasses, nose, mouth,
+     * lips) — everything inswapper may repaint — slightly grown and feathered. Hair, hands and
+     * other occluders fall outside it and are kept.
+     */
+    private fun occlusionMask(target: Bitmap, keypoints: FloatArray): ((android.graphics.Rect) -> Mat?)? =
+        runCatching {
+            val parse = regionParser.parse(target, keypoints)
+            val region = parse.classMask(
+                FaceClass.SKIN,
+                FaceClass.L_BROW, FaceClass.R_BROW,
+                FaceClass.L_EYE, FaceClass.R_EYE,
+                FaceClass.GLASSES, FaceClass.NOSE,
+                FaceClass.MOUTH,
+                FaceClass.U_LIP, FaceClass.L_LIP,
+            )
+            val grow = (parse.eyeDistance * 0.04f).toInt().coerceAtLeast(1) * 2 + 1
+            val grown = region.dilated(grow)
+            region.release()
+            val feather = (parse.eyeDistance * 0.05f).toInt().coerceAtLeast(2)
+            // Invoked once by pasteBack; the crop mask is released after projecting.
+            val provider: (android.graphics.Rect) -> Mat? = { roi -> parse.projectInto(grown, roi, feather).also { grown.release() } }
+            provider
+        }.onFailure { Log.w(TAG, "Occlusion mask failed; pasting without it", it) }.getOrNull()
 
     private fun runInswapper(
         session: OrtSession,

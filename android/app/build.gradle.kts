@@ -83,6 +83,11 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // The QNN HTP backend hands its DSP-side libraries to the Hexagon NPU by file path, so
+        // native libraries must be extracted to disk at install time.
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
@@ -113,7 +118,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+    // The QNN build bundles the regular ONNX Runtime (CPU EP) plus Qualcomm's QNN execution
+    // provider for the Hexagon NPU. 1.29.0 is the latest QNN Android release on Maven Central.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.opencv:opencv:4.10.0")
 

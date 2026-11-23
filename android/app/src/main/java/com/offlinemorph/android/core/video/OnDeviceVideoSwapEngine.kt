@@ -14,7 +14,8 @@ import java.io.File
  *
  * Pipeline (two passes):
  *  1. Decode each frame from [targetVideoUri] → run face swap via [faceSwapEngine] → encode
- *     swapped frames to a temporary video-only MP4 in [outputDir].
+ *     swapped frames to a temporary video-only MP4 in [outputDir]. Face landmarks are
+ *     stabilised across frames with a [KeypointStabilizer] so the swapped face doesn't shimmer.
  *  2. Remux the temp video with the original audio track from [targetVideoUri] into the final
  *     output MP4.  When no audio track exists the temp file is renamed directly.
  *
@@ -56,6 +57,7 @@ class OnDeviceVideoSwapEngine(
 
         var framesProcessed = 0
         val startTime = System.currentTimeMillis()
+        val stabilizer = if (request.temporalSmoothing) KeypointStabilizer() else null
         try {
             decoder.decodeFrames(
                 uri = request.targetVideoUri,
@@ -69,6 +71,7 @@ class OnDeviceVideoSwapEngine(
                     faceFilterMode  = request.faceFilterMode,
                     // Poisson cloning costs tens of ms per frame; the feathered matte suffices for video.
                     seamlessBlend   = false,
+                    keypointTransform = stabilizer?.let { s -> { faces -> s.stabilize(faces) } },
                 )
                 val result = faceSwapEngine.runSwap(swapRequest)
                 val swappedBitmap = result.outputBitmap ?: frame.bitmap

@@ -151,6 +151,17 @@ fun AgingScreen(viewModel: AgingViewModel = viewModel()) {
             )
         }
 
+        val npuStatus by com.offlinemorph.android.core.ml.NpuWarmup.status.collectAsStateWithLifecycle()
+        val compiling = npuStatus as? com.offlinemorph.android.core.ml.NpuWarmup.Status.Compiling
+        if (compiling?.modelName == com.offlinemorph.android.feature.models.ModelCatalog.FRAN) {
+            Text(
+                "Optimising the aging model for the NPU in the background (one time, about 10 min). Until then aging " +
+                    "runs on the CPU and takes ~35 s per face; afterwards it takes under a second.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         // Run / clear
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(

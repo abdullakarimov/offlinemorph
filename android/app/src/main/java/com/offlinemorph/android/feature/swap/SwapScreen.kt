@@ -25,7 +25,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import com.offlinemorph.android.core.ml.FaceFilterMode
+import com.offlinemorph.android.feature.device.QualityProfile
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -175,48 +175,42 @@ fun SwapScreen(viewModel: SwapViewModel = viewModel()) {
                 message = swapStatusMessage,
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                val enhancerInteractive = !isSwapping && !uiState.isWorking
-                Checkbox(
-                    checked = uiState.isEnhancerEnabled,
-                    onCheckedChange = viewModel::toggleEnhancer,
-                    enabled = enhancerInteractive,
-                )
-                Text(
-                    text = if (uiState.isEnhancerModelAvailable) {
-                        "Enable AI Face Enhancer (Slower)"
-                    } else {
-                        "Enable AI Face Enhancer (install GFPGANv1.4.onnx in Setup first)"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(
-                        alpha = if (enhancerInteractive) 1f else 0.38f,
-                    ),
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                val detailInteractive = !isSwapping && !uiState.isWorking
-                Checkbox(
-                    checked = uiState.isHighDetailEnabled,
-                    onCheckedChange = viewModel::toggleHighDetail,
-                    enabled = detailInteractive,
-                )
-                Text(
-                    text = "High Detail Swap (~4× slower, sharper close-ups)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(
-                        alpha = if (detailInteractive) 1f else 0.38f,
-                    ),
-                )
+            // ── Quality profile ───────────────────────────────────────────────
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Quality", style = MaterialTheme.typography.titleSmall)
+                    val profiles = QualityProfile.entries
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        profiles.forEachIndexed { index, profile ->
+                            SegmentedButton(
+                                selected = uiState.qualityProfile == profile,
+                                onClick = { viewModel.setQualityProfile(profile) },
+                                enabled = !isSwapping && !uiState.isWorking,
+                                shape = SegmentedButtonDefaults.itemShape(index, profiles.size),
+                                label = { Text(profile.displayName) },
+                            )
+                        }
+                    }
+                    Text(uiState.qualityProfile.description, style = MaterialTheme.typography.bodySmall)
+                    val missing = buildList {
+                        if (uiState.qualityProfile != QualityProfile.FAST && !uiState.isParsingModelAvailable) {
+                            add("face_parsing.onnx (occlusion mask)")
+                        }
+                        if (uiState.qualityProfile == QualityProfile.STUDIO && !uiState.isEnhancerModelAvailable) {
+                            add("GFPGANv1.4.onnx (face restoration)")
+                        }
+                    }
+                    if (missing.isNotEmpty()) {
+                        Text(
+                            "Not installed, skipped: ${missing.joinToString()}. Get them in Setup → Download All.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
 
             FlowRow(

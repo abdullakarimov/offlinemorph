@@ -29,10 +29,15 @@ data class SwapRequest(
     /** Poisson-blend the swapped face into the target so lighting and skin tone match. */
     val seamlessBlend: Boolean = true,
     /**
-     * Precomputed ArcFace identity embedding to swap in. When set, [sourceBitmap] is not
-     * analysed (used by the ancestry blend, whose identity is a mix of two faces).
+     * Limit the paste to the target's parsed face region (needs face_parsing.onnx), so hair,
+     * hands or glasses in front of the face are kept. Ignored when the model is missing.
      */
-    val sourceEmbedding: FloatArray? = null,
+    val occlusionAware: Boolean = false,
+    /**
+     * Optional post-processing of the selected target keypoints before swapping, e.g. temporal
+     * stabilisation across video frames. Receives and returns 10-float 5-point arrays.
+     */
+    val keypointTransform: ((List<FloatArray>) -> List<FloatArray>)? = null,
 ) {
     /**
      * Returns a copy of this request with both bitmaps downscaled so that their longest

@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +53,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.offlinemorph.android.core.ml.hairmakeup.FacialHairStyle
+import com.offlinemorph.android.core.ml.hairmakeup.HairStyle
 import com.offlinemorph.android.ui.components.ZoomableImage
 import kotlin.math.roundToInt
 
@@ -80,6 +83,50 @@ private val LIP_PRESETS = listOf(
     ColorPreset("Berry",   "8b1a8b"),
     ColorPreset("Coral",   "e8603c"),
     ColorPreset("Peach",   "ffab91"),
+)
+
+private val HAIR_SECONDARY_PRESETS = listOf(
+    ColorPreset("Honey",    "d9a75b"),
+    ColorPreset("Blonde",   "e3cc95"),
+    ColorPreset("Platinum", "eee8dc"),
+    ColorPreset("Copper",   "b5562a"),
+    ColorPreset("Rose",     "e58aa8"),
+    ColorPreset("Lilac",    "b49ad8"),
+    ColorPreset("Teal",     "2a8c8c"),
+)
+
+private val EYESHADOW_PRESETS = listOf(
+    ColorPreset("Taupe",   "8b7363"),
+    ColorPreset("Bronze",  "9c6b3c"),
+    ColorPreset("Gold",    "c9a24a"),
+    ColorPreset("Plum",    "6e3a5e"),
+    ColorPreset("Smoky",   "3d3a40"),
+    ColorPreset("Rose",    "c9787f"),
+    ColorPreset("Navy",    "2c3e6b"),
+)
+
+private val EYELINER_PRESETS = listOf(
+    ColorPreset("Black",   "141414"),
+    ColorPreset("Brown",   "3b2617"),
+    ColorPreset("Navy",    "1c2a4a"),
+    ColorPreset("Plum",    "4a1f3d"),
+)
+
+private val BLUSH_PRESETS = listOf(
+    ColorPreset("Pink",    "f08da0"),
+    ColorPreset("Peach",   "f4a582"),
+    ColorPreset("Coral",   "ef7a65"),
+    ColorPreset("Rose",    "d46a7e"),
+    ColorPreset("Berry",   "b04a6a"),
+)
+
+private val FACIAL_HAIR_COLOR_PRESETS = listOf(
+    ColorPreset("Black",   "1a1512"),
+    ColorPreset("Dk Brown","3b2a1e"),
+    ColorPreset("Brown",   "6b4a32"),
+    ColorPreset("Ginger",  "9c5a2c"),
+    ColorPreset("Blonde",  "b8995e"),
+    ColorPreset("Grey",    "8a8580"),
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -119,12 +166,11 @@ fun HairMakeupScreen(viewModel: HairMakeupViewModel = viewModel()) {
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "Hair colouring requires the face_parsing.onnx model. Open Setup → \"Download All (incl. Optional)\" to get it.",
+                        "Hair & makeup requires the face_parsing.onnx model. Open Setup → \"Download All (incl. Optional)\" to get it, then tap Apply again.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             }
-            return@Column
         }
 
         Card(
@@ -166,17 +212,55 @@ fun HairMakeupScreen(viewModel: HairMakeupViewModel = viewModel()) {
             }
         }
 
-        // ── Lip colour ────────────────────────────────────────────────────────
-        Text("Lip Colour", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ColorChip(label = "Off", hex = null, selected = uiState.lipColorHex == null) {
-                viewModel.onLipColorSelected(null)
-            }
-            LIP_PRESETS.forEach { preset ->
-                ColorChip(label = preset.label, hex = preset.hex, selected = uiState.lipColorHex == preset.hex) {
-                    viewModel.onLipColorSelected(preset.hex)
+        if (uiState.hairColorHex != null) {
+            Text("Hair Style", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HairStyle.entries.forEach { style ->
+                    FilterChip(
+                        selected = uiState.hairStyle == style,
+                        onClick = { viewModel.onHairStyleSelected(style) },
+                        label = { Text(style.displayName) },
+                    )
                 }
             }
+            if (uiState.hairStyle != HairStyle.SOLID) {
+                Text(
+                    if (uiState.hairStyle == HairStyle.OMBRE) "Tip Colour" else "Highlight Colour",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                PresetRow(HAIR_SECONDARY_PRESETS, uiState.hairSecondaryColorHex, offLabel = "Auto",
+                    onSelect = viewModel::onHairSecondaryColorSelected)
+            }
+        }
+
+        // ── Makeup ────────────────────────────────────────────────────────────
+        Text("Lip Colour", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        PresetRow(LIP_PRESETS, uiState.lipColorHex, onSelect = viewModel::onLipColorSelected)
+
+        Text("Eyeshadow", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        PresetRow(EYESHADOW_PRESETS, uiState.eyeshadowColorHex, onSelect = viewModel::onEyeshadowColorSelected)
+
+        Text("Eyeliner", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        PresetRow(EYELINER_PRESETS, uiState.eyelinerColorHex, onSelect = viewModel::onEyelinerColorSelected)
+
+        Text("Blush", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        PresetRow(BLUSH_PRESETS, uiState.blushColorHex, onSelect = viewModel::onBlushColorSelected)
+
+        // ── Facial hair ───────────────────────────────────────────────────────
+        Text("Facial Hair", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FacialHairStyle.entries.forEach { style ->
+                FilterChip(
+                    selected = uiState.facialHair == style,
+                    onClick = { viewModel.onFacialHairSelected(style) },
+                    label = { Text(style.displayName) },
+                )
+            }
+        }
+        if (uiState.facialHair != FacialHairStyle.NONE) {
+            Text("Facial Hair Colour", style = MaterialTheme.typography.labelMedium)
+            PresetRow(FACIAL_HAIR_COLOR_PRESETS, uiState.facialHairColorHex, offLabel = "Match",
+                onSelect = viewModel::onFacialHairColorSelected)
         }
 
         // ── Intensity ─────────────────────────────────────────────────────────
@@ -193,8 +277,7 @@ fun HairMakeupScreen(viewModel: HairMakeupViewModel = viewModel()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = viewModel::runHairMakeup,
-                enabled = uiState.sourceUri != null && !uiState.isWorking
-                        && (uiState.hairColorHex != null || uiState.lipColorHex != null),
+                enabled = uiState.sourceUri != null && !uiState.isWorking && uiState.hasAnyEffect,
                 modifier = Modifier.weight(1f),
             ) { Text("Apply") }
             OutlinedButton(
@@ -244,6 +327,24 @@ fun HairMakeupScreen(viewModel: HairMakeupViewModel = viewModel()) {
                 }
             }
             else -> Unit
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PresetRow(
+    presets: List<ColorPreset>,
+    selectedHex: String?,
+    offLabel: String = "Off",
+    onSelect: (String?) -> Unit,
+) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ColorChip(label = offLabel, hex = null, selected = selectedHex == null) { onSelect(null) }
+        presets.forEach { preset ->
+            ColorChip(label = preset.label, hex = preset.hex, selected = selectedHex == preset.hex) {
+                onSelect(preset.hex)
+            }
         }
     }
 }

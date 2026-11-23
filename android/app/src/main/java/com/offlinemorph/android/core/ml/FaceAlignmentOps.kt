@@ -187,6 +187,9 @@ object FaceAlignmentOps {
      * target, and the soft matte is then applied on top so edges stay feathered.
      *
      * @param strength scales the matte, e.g. 0.8 keeps 20 % of the original pixels.
+     * @param regionMask optional extra matte for the paste ROI (CV_32FC1, 0–1, ROI-sized; the
+     *   callee releases it), e.g. the target's parsed face region so hair or hands that cover
+     *   the face are kept rather than pasted over.
      */
     fun pasteBack(
         target: Bitmap,
@@ -194,6 +197,7 @@ object FaceAlignmentOps {
         patchToTarget: Matrix,
         seamless: Boolean,
         strength: Float = 1f,
+        regionMask: ((Rect) -> Mat?)? = null,
     ): Bitmap {
         val patchSize = patch.cols().toFloat()
         val roi = mappedBounds(patchToTarget, patchSize, patch.rows().toFloat(), target.width, target.height, pad = 2)
@@ -237,6 +241,10 @@ object FaceAlignmentOps {
 
         val matte = Mat()
         mask.convertTo(matte, CvType.CV_32F, strength / 255.0)
+        regionMask?.invoke(roi)?.let { region ->
+            org.opencv.core.Core.multiply(matte, region, matte)
+            region.release()
+        }
         val inverseMatte = Mat()
         matte.convertTo(inverseMatte, CvType.CV_32F, -1.0, 1.0)
         val blended = Mat()
@@ -316,12 +324,12 @@ object FaceAlignmentOps {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun matrixScale(matrix: Matrix): Float {
+    internal fun matrixScale(matrix: Matrix): Float {
         val v = FloatArray(9).also(matrix::getValues)
         return sqrt(abs(v[Matrix.MSCALE_X] * v[Matrix.MSCALE_Y] - v[Matrix.MSKEW_X] * v[Matrix.MSKEW_Y]))
     }
 
-    private fun Matrix.toAffineMat(): Mat {
+    internal fun Matrix.toAffineMat(): Mat {
         val v = FloatArray(9).also(::getValues)
         return Mat(2, 3, CvType.CV_64F).apply {
             put(
@@ -333,7 +341,7 @@ object FaceAlignmentOps {
     }
 
     /** Bounding box of the [width]×[height] rectangle mapped through [matrix], clamped to the image. */
-    private fun mappedBounds(
+    internal fun mappedBounds(
         matrix: Matrix,
         width: Float,
         height: Float,
@@ -358,7 +366,7 @@ object FaceAlignmentOps {
         return rect.takeIf { it.width() > 1 && it.height() > 1 }
     }
 
-    private fun bitmapRegionToRgbMat(bitmap: Bitmap, roi: Rect): Mat {
+    internal fun bitmapRegionToRgbMat(bitmap: Bitmap, roi: Rect): Mat {
         val software = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
             else bitmap.copy(Bitmap.Config.ARGB_8888, false)
         val region = Bitmap.createBitmap(software, roi.left, roi.top, roi.width(), roi.height())
@@ -372,7 +380,7 @@ object FaceAlignmentOps {
         return rgb
     }
 
-    private fun rgbMatToBitmap(rgb: Mat): Bitmap {
+    internal fun rgbMatToBitmap(rgb: Mat): Bitmap {
         val rgba = Mat()
         Imgproc.cvtColor(rgb, rgba, Imgproc.COLOR_RGB2RGBA)
         val bitmap = Bitmap.createBitmap(rgb.cols(), rgb.rows(), Bitmap.Config.ARGB_8888)

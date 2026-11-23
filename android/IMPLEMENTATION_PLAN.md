@@ -57,7 +57,7 @@ Selection policy for integration:
 | Relighting Depth Prior (for approximate normal estimation) | `onnx-community/depth-anything-v2-small`, `onnx-community/depth-anything-v2-base`, `Heliosoph/zoedepth-nyu-kitti-onnx` | Use monocular depth as first-stage prior for local relight engine. |
 | Landmark Alternative (if not using MediaPipe Tasks) | `astaileyyoung/FaceMeshONNX` | Experimental fallback only; primary recommendation remains MediaPipe Tasks for production. |
 | Aging / De-aging Generator | `facefusion/models-3.6.0` → `fran.onnx` (131 MB, FRAN U-Net, MIT; weights `timroelofs123/face_re-aging`, MIT). Rejected: `facefusion/models-3.1.0` → `styleganex_age.onnx` (1.34 GB, S-Lab 1.0 non-commercial). | **Adopted (2026-11-20).** 1024 px FFHQ-aligned crop, `direction` = [current, target] age / 100. Current age from `genderage.onnx`. |
-| Ancestry Blend Generator | No dedicated model needed | **Adopted (2026-11-20).** Blend two ArcFace (`w600k_r50`) embeddings and render with `inswapper_128` as the identity-conditioned generator. |
+| Ancestry Blend Generator | None suitable | **Dropped (2026-11-23).** The 2026-11-20 version blended two ArcFace embeddings and rendered them with inswapper, which made it face swap with a mixed identity. A genuine ancestry feature needs a generative model; revisit if one becomes available. |
 
 ### Model Intake Checklist
 
@@ -523,7 +523,7 @@ Files modified:
 
 **Model availability policy (established):** Features without publicly available ONNX models are hidden via `FeatureFlags`; only features with a downloadable public model URL are enabled.
 
-**Known gap:** Beautify's eye-enlarge, face-slim and teeth-whiten sliders are accepted but do not change the output yet; only skin smoothing is implemented.
+**Known gap (closed in Iteration 9):** Beautify's eye-enlarge, face-slim and teeth-whiten sliders did not change the output yet.
 
 ### Iteration 8 — Aging (FRAN) + Ancestry live, Relight/Background contracts, golden-image tests (completed 2026-11-20)
 
@@ -574,11 +574,85 @@ Open follow-ups:
 - On the emulator, `PipelineOnDeviceTest.executionProviderBenchmark` kills the test process after the recognizer benchmarks; likely out of memory from extra NNAPI sessions. `swapPipeline_runsEndToEnd` passes.
 - Run the Model Intake Checklist for `fran.onnx`. Licence and provenance are recorded above. Still to do: on-device latency, memory and thermal benchmarks, and a review of artifacts on real portraits.
 
-### Next: Iteration 9 — Phase G Background Swap (BiRefNet_lite) + Phase F Relight prior
+### Iteration 9 — Beautify + Hair & Makeup completed, Phase B swap uplift, NPU acceleration (completed 2026-11-23)
+
+Ancestry removed: it was face swap with a blended identity, not a distinct feature.
+
+**Shared face regions** (`core/ml/face/`):
+
+- `FaceRegions.kt`, `FaceRegionParser`: aligns each face to the FFHQ template, parses it with BiSeNet `face_parsing.onnx` in that upright crop, and projects region masks back onto the photo at full resolution. Before, the whole photo was squeezed to 512 px.
+  - Without the model, an approximate parse is drawn from the 5-point keypoints.
+  - Hair uses a wider crop (`HAIR_ZOOM`).
+  - Class ids corrected to the CelebAMask-HQ order: 10 = nose, 11 = inner mouth.
+- `RegionEffects.kt`:
+  - Lab recolour that keeps shading and texture
+  - teeth whitening (tooth-like pixels only)
+  - tints (normal, multiply, soft light, shaded)
+  - frequency-separation skin retouch
+  - `FaceWarp`: capped inverse-map warps that cannot fold
+- `FaceKeypoints.kt`: per-face keypoint extraction shared by engines.
+
+**Beautify, complete** (`OnDeviceBeautifyEngine`):
+
+- Skin smoothing is limited to skin and nose.
+- Teeth whitening, eye enlarging and face slimming are implemented. Slimming is one smooth compression field in face space; summed local pushes folded the image.
+- Multi-face (up to 4).
+- Without the detector, skin smoothing falls back to the old whole-image filter.
+
+**Hair & Makeup, complete** (`OnDeviceHairMakeupEngine`):
+
+- Hair: Solid, Ombré and Highlights layouts with a secondary colour.
+- Makeup: lipstick that keeps gloss, eyeshadow lid band, eyeliner on the upper contour, cheek blush.
+- Facial hair: stubble, moustache, goatee and full beard. A procedural strand texture fills a style region bounded by parsed skin, so it follows the jaw. Colour defaults to the eyebrows'.
+- The screen keeps its controls when the model is missing.
+- GPU shader compositing is deferred: CPU compositing at full resolution is fast enough for still images.
+
+**Phase B face swap uplift:**
+
+- Fast / Balanced / Studio profiles (`feature/swap/SwapQuality.kt`), deterministic per profile. The thermal/memory policy can only lower the profile. They replace the separate enhancer and "high detail" switches.
+- Occlusion-aware paste (`SwapRequest.occlusionAware`, Balanced and Studio): the target's parsed face region multiplies the paste matte, so hair, hands and glasses over the face are kept.
+- Video: `KeypointStabilizer` gives per-face tracked, adaptive smoothing of landmarks across frames. It removes the shimmer while following real motion within a frame.
+- The multi-face picker already existed. `faceSwapUpliftEnabled` was removed.
+
+**NPU acceleration** (Snapdragon Hexagon via ONNX Runtime QNN EP, HTP backend, FP16):
+
+- Dependency: `onnxruntime-android-qnn:1.29.0` (latest QNN Android release; bundles the CPU EP).
+- `<uses-native-library libcdsprpc.so>` is declared, and native libraries are extracted at install.
+- The key fix was to pin the models' symbolic dimensions (`batch`, `None`, `?`) with `setSymbolicDimensionValue`. QNN rejects dynamic shapes, and the detector, recogniser, genderage, 2d106det and FRAN were silently staying on the CPU.
+
+Measured on a Galaxy S25 Ultra (SM8750) with `NpuBenchmarkTest`, same inputs on CPU and NPU:
+
+| Model | CPU | NPU | NPU vs CPU | Compile (once) |
+| --- | --- | --- | --- | --- |
+| det_10g | 242 ms | 2 ms | cosine 0.986 (validated on device; see below) | 1.7 s |
+| w600k_r50 | 97 ms | 1 ms | cosine 1.000 | 2.0 s |
+| face_parsing | 187 ms | 6 ms | cosine 1.000 | 1.7 s |
+| genderage / 2d106det | ≤ 2 ms | < 1 ms | cosine 1.000 | < 0.4 s |
+| fran (aging, 1024²) | 37.6 s | **0.39 s** | cosine 1.000; end-to-end golden mean diff 0.012 / 255 | 8–12 min |
+| GFPGANv1.4 | 2.5 s | 0.25 s | **NaN: FP16 overflow** | 160 s |
+| inswapper_128 | 2.3 s | n/a | **FP16 overflow; crashes the process** | n/a |
+
+- `NpuPolicy.NPU_MODELS` allowlists the five verified models plus FRAN. inswapper and GFPGAN are excluded up front, because a native crash cannot be caught and retried on the CPU.
+- `NpuWarmup` compiles in a low-priority background thread at app start and after downloads, and caches compiled graphs with ONNX Runtime's EP context in `files/qnn_cache/`. A cached graph loads in ~130 ms instead of seconds.
+  - Until a model's graph is cached it runs on the CPU.
+  - Once the graph is ready, a loaded CPU session is upgraded in place; the old one is closed after 5 minutes.
+  - An interrupted compile is retried; after 5 interrupted attempts the model is left on the CPU.
+- The detector is validated on real photos: the first time the NPU detector finds a face, the CPU detector runs on the same input. If the 5-point landmarks differ by more than 3% of the eye distance, the detector is demoted to the CPU for good.
+- Setup shows NPU status and compile progress; the Aging screen explains the one-time FRAN compile.
+- `FeatureFlags.npuAccelerationEnabled` turns all of this off.
+
+Tests: the golden-image suite has 18 tests. It now covers beautify (template parse), hair & makeup, occlusion-aware swap, the colour and warp primitives, quality profiles and the stabiliser. On the S25 Ultra, with face parsing on the NPU, every golden recorded on the emulator's CPU still matches (makeup mean difference 0.06 / 255). The aging golden was recorded on the phone.
+
+Open follow-ups:
+
+- Run inswapper (and GFPGAN) on the NPU. That needs an INT8/INT16 QDQ-quantised or FP16-safe re-export of the model, calibrated on real face crops. inswapper's AdaIN blocks square their activations, which overflows FP16. The payoff is large: 2.3 s → ~40 ms per face, which matters most for video.
+- Check makeup and facial hair on real portraits. The parsing model does not recognise the synthetic test portrait, so goldens only guard against regressions.
+
+### Next: Iteration 10 — Phase G Background Swap (BiRefNet_lite) + Phase F Relight prior
 
 Planned work:
 
-1. Benchmark `onnx-community/BiRefNet_lite-ONNX` vs `BiRefNet-portrait` on device; add the chosen model to `ModelCatalog` as a feature pack.
+1. Benchmark `onnx-community/BiRefNet_lite-ONNX` vs `BiRefNet-portrait` on device, CPU and NPU (use `NpuBenchmarkTest`). Add the chosen model to `ModelCatalog` as a feature pack.
 2. `OnDeviceBackgroundSwapEngine` implementing `BackgroundSwapEngine` (matte → Image, Bokeh or SolidColor composite, with anti-halo refinement).
 3. Background tab and screen behind `backgroundSwapEnabled`.
 4. Depth-prior spike for relighting with `depth-anything-v2-small`: depth → normals → Lambert shading driven by `VirtualLight`.

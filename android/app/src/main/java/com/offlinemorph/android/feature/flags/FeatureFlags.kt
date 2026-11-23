@@ -8,14 +8,8 @@ package com.offlinemorph.android.feature.flags
  * the Definition of Done in IMPLEMENTATION_PLAN.md.
  */
 object FeatureFlags {
-    /** Phase B — Face swap quality uplift (boundary blending, multi-face, quality profiles). */
-    val faceSwapUpliftEnabled: Boolean = false
-
     /** Phase C — AI Aging and De-aging synthesis (FRAN re-aging model, aging feature pack). */
     val agingEnabled: Boolean = true
-
-    /** Phase C — Ancestry blend synthesis (ArcFace embedding blend rendered with inswapper). */
-    val ancestryEnabled: Boolean = true
 
     /** Phase D — Hair and Makeup studio. */
     val hairMakeupEnabled: Boolean = true
@@ -28,4 +22,10 @@ object FeatureFlags {
 
     /** Phase G — Background matting and scene replacement. */
     val backgroundSwapEnabled: Boolean = false
+
+    /**
+     * Run NPU-verified models on the Qualcomm Hexagon NPU (QNN HTP) when available; see
+     * [com.offlinemorph.android.core.ml.NpuPolicy]. Set to false to force CPU everywhere.
+     */
+    val npuAccelerationEnabled: Boolean = true
 }

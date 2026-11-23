@@ -13,6 +13,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.OfflineMorph">
+        <!-- FastRPC library used by the QNN HTP backend to reach the Hexagon NPU (Android 12+
+             requires vendor libraries to be declared). Optional: the app falls back to CPU. -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

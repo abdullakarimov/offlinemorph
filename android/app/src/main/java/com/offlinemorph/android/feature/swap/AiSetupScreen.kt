@@ -74,6 +74,7 @@ fun AiSetupScreen(viewModel: SwapViewModel = viewModel()) {
                 title = uiState.deviceCapabilityTitle,
                 message = uiState.deviceCapabilityMessage,
             )
+            NpuStatusCard()
 
             // ── Model download list ───────────────────────────────────────────
             if (uiState.downloadItems.isNotEmpty()) {
@@ -252,6 +253,21 @@ private fun ModelRow(item: ModelDownloadItem) {
             }
         }
     }
+}
+
+/** Shows whether the Hexagon NPU is in use and the progress of background graph compilation. */
+@Composable
+private fun NpuStatusCard() {
+    if (!com.offlinemorph.android.core.ml.NpuPolicy.isQualcommNpuDevice) return
+    val status by com.offlinemorph.android.core.ml.NpuWarmup.status.collectAsStateWithLifecycle()
+    val message = when (val s = status) {
+        is com.offlinemorph.android.core.ml.NpuWarmup.Status.Compiling ->
+            "Optimising ${s.modelName} for the NPU (${s.remaining} model(s) left). This runs once in the " +
+                "background; features use the CPU until it finishes. FRAN (aging) takes about 10 minutes."
+        else -> "Face detection, recognition, face parsing and aging run on the Snapdragon NPU. " +
+            "Face swap and GFPGAN stay on the CPU (their models overflow the NPU's 16-bit precision)."
+    }
+    SetupStatusCard(title = "NPU Acceleration", message = message)
 }
 
 @Composable

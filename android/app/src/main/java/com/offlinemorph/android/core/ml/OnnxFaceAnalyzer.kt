@@ -52,14 +52,23 @@ class OnnxFaceAnalyzer(
             inputSize = detectorInput.bitmap.width,
             label = "detector",
         )
-        val detectorDecode = decodeDetectorOutputs(
-            detectorOutputs = detectorProbe.outputs,
-            fallbackOutput = detectorProbe.firstOutput,
-            detectorInputSize = detectorInput.bitmap.width,
-            detectorScale = detectorInput.scale,
-            sourceWidth = bitmap.width,
-            sourceHeight = bitmap.height,
-        )
+        val decodeWith: (SessionProbeResult) -> DetectorDecodeResult = { probe ->
+            decodeDetectorOutputs(
+                detectorOutputs = probe.outputs,
+                fallbackOutput = probe.firstOutput,
+                detectorInputSize = detectorInput.bitmap.width,
+                detectorScale = detectorInput.scale,
+                sourceWidth = bitmap.width,
+                sourceHeight = bitmap.height,
+            )
+        }
+        val detectorDecode = decodeWith(detectorProbe).let { npuOrCpu ->
+            crossCheckNpuDetector(detectorFile, npuOrCpu) {
+                sessionFactory.cpuSession(detectorFile).use { cpu ->
+                    decodeWith(runSessionProbe(cpu, detectorTensor, detectorInput.bitmap.width, "detector-cpu"))
+                }
+            }
+        }
         val primaryFaceBox = detectorDecode.primaryFaceBox
 
         // Dense landmarks are only needed when the detector produced no 5-point keypoints.
@@ -121,6 +130,36 @@ class OnnxFaceAnalyzer(
             primaryFaceBox = primaryFaceBox,
             allDetectedFaces = allDetectedFaces,
         ).also { geometryCache.put(bitmap, it, hasEmbedding = includeEmbedding, hasGender = includeGender) }
+    }
+
+    /**
+     * One-time check of the NPU detector on a real photo: the first time it finds a face, the
+     * CPU detector is run on the same input and the 5-point landmarks are compared. Within
+     * [NpuPolicy.DETECTOR_TOLERANCE] of the eye distance the NPU is marked validated; otherwise
+     * the detector is moved back to the CPU for good and the CPU result is used.
+     */
+    private fun crossCheckNpuDetector(
+        detectorFile: File,
+        npuResult: DetectorDecodeResult,
+        cpuDecode: () -> DetectorDecodeResult,
+    ): DetectorDecodeResult {
+        if (sessionFactory.backendOf(detectorFile) != "NPU" || sessionFactory.isNpuValidated(detectorFile)) return npuResult
+        val npuKps = npuResult.detectorFivePoints ?: return npuResult // no face yet: check on a later photo
+        val cpuResult = runCatching(cpuDecode).getOrElse { return npuResult }
+        val cpuKps = cpuResult.detectorFivePoints
+        val iod = cpuKps?.let { kotlin.math.hypot(it[2] - it[0], it[3] - it[1]) } ?: 0f
+        val worst = if (cpuKps == null || iod <= 0f) Float.MAX_VALUE else (0 until 5).maxOf { i ->
+            kotlin.math.hypot(npuKps[i * 2] - cpuKps[i * 2], npuKps[i * 2 + 1] - cpuKps[i * 2 + 1]) / iod
+        }
+        return if (worst <= NpuPolicy.DETECTOR_TOLERANCE && npuResult.allFaces.size == cpuResult.allFaces.size) {
+            android.util.Log.i("OnnxFaceAnalyzer", "NPU detector validated (landmark error %.4f of eye distance)".format(worst))
+            sessionFactory.markNpuValidated(detectorFile)
+            npuResult
+        } else {
+            android.util.Log.w("OnnxFaceAnalyzer", "NPU detector mismatch (error $worst, faces ${npuResult.allFaces.size} vs ${cpuResult.allFaces.size})")
+            sessionFactory.demoteToCpu(detectorFile)
+            cpuResult
+        }
     }
 
     /**

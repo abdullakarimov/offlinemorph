@@ -101,19 +101,19 @@ fun BeautifyScreen(viewModel: BeautifyViewModel = viewModel()) {
 
         // ── Controls pending model support (shown, not yet applied) ───────────
         ControlSlider(
-            label = "Eye Enlarge: ${(uiState.eyeEnlarge * 100).roundToInt()}%  (coming soon)",
+            label = "Eye Enlarge: ${(uiState.eyeEnlarge * 100).roundToInt()}%",
             value = uiState.eyeEnlarge,
             onValueChange = viewModel::onEyeEnlargeChanged,
             enabled = false,
         )
         ControlSlider(
-            label = "Face Slim: ${(uiState.faceSlim * 100).roundToInt()}%  (coming soon)",
+            label = "Face Slim: ${(uiState.faceSlim * 100).roundToInt()}%",
             value = uiState.faceSlim,
             onValueChange = viewModel::onFaceSlimChanged,
             enabled = false,
         )
         ControlSlider(
-            label = "Teeth Whitening: ${(uiState.teethWhiten * 100).roundToInt()}%  (coming soon)",
+            label = "Teeth Whitening: ${(uiState.teethWhiten * 100).roundToInt()}%",
             value = uiState.teethWhiten,
             onValueChange = viewModel::onTeethWhitenChanged,
             enabled = false,

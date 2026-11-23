@@ -6,10 +6,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.offlinemorph.android.core.image.AndroidBitmapLoader
 import com.offlinemorph.android.core.ml.EngineResult
+import com.offlinemorph.android.core.ml.OnnxFaceAnalyzer
+import com.offlinemorph.android.core.ml.OrtSessionFactory
 import com.offlinemorph.android.core.ml.beautify.BeautifyEngine
 import com.offlinemorph.android.core.ml.beautify.BeautifyRequest
 import com.offlinemorph.android.core.ml.beautify.OnDeviceBeautifyEngine
 import com.offlinemorph.android.feature.flags.FeatureFlags
+import com.offlinemorph.android.feature.models.ModelPaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +23,10 @@ import kotlinx.coroutines.withContext
 
 class BeautifyViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val beautifyEngine: BeautifyEngine = OnDeviceBeautifyEngine()
+    // Engines are class-body properties: AndroidViewModelFactory needs a plain (Application) constructor.
+    private val beautifyEngine: BeautifyEngine = ModelPaths.appModelsDirectory(application).let { dir ->
+        OnDeviceBeautifyEngine(modelsDirectory = dir, faceAnalyzer = OnnxFaceAnalyzer(dir, OrtSessionFactory()))
+    }
     private val bitmapLoader = AndroidBitmapLoader(application.contentResolver)
 
     private val _uiState = MutableStateFlow(
@@ -61,7 +67,7 @@ class BeautifyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _uiState.update { it.copy(beautifyState = BeautifyUiState.Loading("Loading image…"), isWorking = true) }
 
-            val bitmapResult = runCatching { bitmapLoader.load(sourceUri) }
+            val bitmapResult = withContext(Dispatchers.IO) { runCatching { bitmapLoader.load(sourceUri, maxDimensionPx = 4096) } }
             if (bitmapResult.isFailure) {
                 _uiState.update {
                     it.copy(beautifyState = BeautifyUiState.Error("Failed to load image."), isWorking = false)
